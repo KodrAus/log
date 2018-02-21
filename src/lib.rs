@@ -642,7 +642,7 @@ impl<'a> fmt::Debug for Properties<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut d = f.debug_set();
 
-        for &(ref k, _) in self {
+        for (ref k, _) in self {
             d.entry(k);
         }
 
@@ -671,7 +671,7 @@ impl<'a, 'b> fmt::Debug for Iter<'a, 'b> where 'a: 'b {
 }
 
 impl<'a, 'b> Iterator for Iter<'a, 'b> where 'a: 'b {
-    type Item = &'b (&'a str, &'a erased_serde::Serialize);
+    type Item = (&'a str, &'a erased_serde::Serialize);
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.iter.next() {
@@ -680,13 +680,13 @@ impl<'a, 'b> Iterator for Iter<'a, 'b> where 'a: 'b {
                     self.properties = parent;
                     self.iter = self.properties.kv.into_iter();
 
-                    self.iter.next()
+                    self.iter.next().cloned()
                 }
                 else {
                     None
                 }
             },
-            item => item,
+            item => item.cloned(),
         }
     }
 }
@@ -703,7 +703,7 @@ impl<'a> Properties<'a> {
 
 impl<'a, 'b> IntoIterator for &'b Properties<'a> where 'a: 'b {
     type IntoIter = Iter<'a, 'b>;
-    type Item = &'b (&'a str, &'a erased_serde::Serialize);
+    type Item = (&'a str, &'a erased_serde::Serialize);
 
     fn into_iter(self) -> Self::IntoIter {
         Iter {
