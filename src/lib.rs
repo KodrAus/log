@@ -695,6 +695,10 @@ impl<'a> Properties<'a> {
     pub fn iter<'b>(&'b self) -> Iter<'a, 'b> where 'a: 'b {
         self.into_iter()
     }
+
+    pub fn any(&self) -> bool {
+        self.kv.len() > 0 || self.parent.as_ref().map(|parent| parent.any()).unwrap_or(false)
+    }
 }
 
 impl<'a, 'b> IntoIterator for &'b Properties<'a> where 'a: 'b {
