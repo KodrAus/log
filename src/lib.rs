@@ -267,6 +267,9 @@
 #[cfg(not(feature = "std"))]
 extern crate core as std;
 
+#[cfg(feature = "std")]
+extern crate erased_serde;
+
 #[macro_use]
 extern crate cfg_if;
 
@@ -276,7 +279,11 @@ use std::error;
 use std::fmt;
 use std::mem;
 use std::str::FromStr;
+use std::borrow::Cow;
 use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
+#[cfg(feature = "std")]
+use std::slice;
+
 
 #[macro_use]
 mod macros;
@@ -612,11 +619,94 @@ impl LevelFilter {
 /// [`target()`]: struct.Record.html#method.target
 #[derive(Clone, Debug)]
 pub struct Record<'a> {
+    header: Cow<'a, Header<'a>>,
+    properties: Properties<'a>,
+}
+
+#[derive(Clone, Debug)]
+struct Header<'a> {
     metadata: Metadata<'a>,
     args: fmt::Arguments<'a>,
     module_path: Option<&'a str>,
     file: Option<&'a str>,
     line: Option<u32>,
+}
+
+#[derive(Clone)]
+pub struct Properties<'a> {
+    kv: &'a [(&'a str, &'a erased_serde::Serialize)],
+    parent: Option<&'a Properties<'a>>,
+}
+
+impl<'a> fmt::Debug for Properties<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut d = f.debug_set();
+
+        for &(ref k, _) in self {
+            d.entry(k);
+        }
+
+        d.finish()
+    }
+}
+
+impl<'a> Default for Properties<'a> {
+    fn default() -> Self {
+        Properties {
+            kv: &[],
+            parent: None,
+        }
+    }
+}
+
+pub struct Iter<'a, 'b> where 'a: 'b {
+    properties: &'b Properties<'a>,
+    iter: slice::Iter<'b, (&'a str, &'a erased_serde::Serialize)>,
+}
+
+impl<'a, 'b> fmt::Debug for Iter<'a, 'b> where 'a: 'b {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Iter").finish()
+    }
+}
+
+impl<'a, 'b> Iterator for Iter<'a, 'b> where 'a: 'b {
+    type Item = &'b (&'a str, &'a erased_serde::Serialize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.iter.next() {
+            None => {
+                if let Some(parent) = self.properties.parent.clone() {
+                    self.properties = parent;
+                    self.iter = self.properties.kv.into_iter();
+
+                    self.iter.next()
+                }
+                else {
+                    None
+                }
+            },
+            item => item,
+        }
+    }
+}
+
+impl<'a> Properties<'a> {
+    pub fn iter<'b>(&'b self) -> Iter<'a, 'b> where 'a: 'b {
+        self.into_iter()
+    }
+}
+
+impl<'a, 'b> IntoIterator for &'b Properties<'a> where 'a: 'b {
+    type IntoIter = Iter<'a, 'b>;
+    type Item = &'b (&'a str, &'a erased_serde::Serialize);
+
+    fn into_iter(self) -> Self::IntoIter {
+        Iter {
+            properties: &self,
+            iter: self.kv.into_iter()
+        }
+    }
 }
 
 impl<'a> Record<'a> {
@@ -629,43 +719,60 @@ impl<'a> Record<'a> {
     /// The message body.
     #[inline]
     pub fn args(&self) -> &fmt::Arguments<'a> {
-        &self.args
+        &self.header.args
     }
 
     /// Metadata about the log directive.
     #[inline]
     pub fn metadata(&self) -> &Metadata<'a> {
-        &self.metadata
+        &self.header.metadata
     }
 
     /// The verbosity level of the message.
     #[inline]
     pub fn level(&self) -> Level {
-        self.metadata.level()
+        self.header.metadata.level()
     }
 
     /// The name of the target of the directive.
     #[inline]
     pub fn target(&self) -> &'a str {
-        self.metadata.target()
+        self.header.metadata.target()
     }
 
     /// The module path of the message.
     #[inline]
     pub fn module_path(&self) -> Option<&'a str> {
-        self.module_path
+        self.header.module_path
     }
 
     /// The source file containing the message.
     #[inline]
     pub fn file(&self) -> Option<&'a str> {
-        self.file
+        self.header.file
     }
 
     /// The line containing the message.
     #[inline]
     pub fn line(&self) -> Option<u32> {
-        self.line
+        self.header.line
+    }
+
+    /// Get a new borrowed record with the additional properties.
+    #[inline]
+    pub fn push<'b>(&'b self, properties: &'b [(&'b str, &'b erased_serde::Serialize)]) -> Record<'b> {
+        Record {
+            header: Cow::Borrowed(&self.header),
+            properties: Properties {
+                kv: properties,
+                parent: Some(&self.properties)
+            }
+        }
+    }
+
+    #[inline]
+    pub fn properties(&self) -> &Properties {
+        &self.properties
     }
 }
 
@@ -731,11 +838,14 @@ impl<'a> RecordBuilder<'a> {
     pub fn new() -> RecordBuilder<'a> {
         RecordBuilder {
             record: Record {
-                args: format_args!(""),
-                metadata: Metadata::builder().build(),
-                module_path: None,
-                file: None,
-                line: None,
+                header: Cow::Owned(Header {
+                    args: format_args!(""),
+                    metadata: Metadata::builder().build(),
+                    module_path: None,
+                    file: None,
+                    line: None,
+                }),
+                properties: Default::default()
             },
         }
     }
@@ -743,49 +853,59 @@ impl<'a> RecordBuilder<'a> {
     /// Set [`args`](struct.Record.html#method.args).
     #[inline]
     pub fn args(&mut self, args: fmt::Arguments<'a>) -> &mut RecordBuilder<'a> {
-        self.record.args = args;
+        self.record.header.to_mut().args = args;
         self
     }
 
     /// Set [`metadata`](struct.Record.html#method.metadata). Construct a `Metadata` object with [`MetadataBuilder`](struct.MetadataBuilder.html).
     #[inline]
     pub fn metadata(&mut self, metadata: Metadata<'a>) -> &mut RecordBuilder<'a> {
-        self.record.metadata = metadata;
+        self.record.header.to_mut().metadata = metadata;
         self
     }
 
     /// Set [`Metadata::level`](struct.Metadata.html#method.level).
     #[inline]
     pub fn level(&mut self, level: Level) -> &mut RecordBuilder<'a> {
-        self.record.metadata.level = level;
+        self.record.header.to_mut().metadata.level = level;
         self
     }
 
     /// Set [`Metadata::target`](struct.Metadata.html#method.target)
     #[inline]
     pub fn target(&mut self, target: &'a str) -> &mut RecordBuilder<'a> {
-        self.record.metadata.target = target;
+        self.record.header.to_mut().metadata.target = target;
         self
     }
 
     /// Set [`module_path`](struct.Record.html#method.module_path)
     #[inline]
     pub fn module_path(&mut self, path: Option<&'a str>) -> &mut RecordBuilder<'a> {
-        self.record.module_path = path;
+        self.record.header.to_mut().module_path = path;
         self
     }
 
     /// Set [`file`](struct.Record.html#method.file)
     #[inline]
     pub fn file(&mut self, file: Option<&'a str>) -> &mut RecordBuilder<'a> {
-        self.record.file = file;
+        self.record.header.to_mut().file = file;
         self
     }
 
     /// Set [`line`](struct.Record.html#method.line)
     #[inline]
     pub fn line(&mut self, line: Option<u32>) -> &mut RecordBuilder<'a> {
-        self.record.line = line;
+        self.record.header.to_mut().line = line;
+        self
+    }
+
+    /// Set properties
+    #[inline]
+    pub fn properties(&mut self, properties: &'a [(&'a str, &'a erased_serde::Serialize)]) -> &mut RecordBuilder<'a> {
+        self.record.properties = Properties {
+            kv: properties,
+            parent: None,
+        };
         self
     }
 
@@ -1297,11 +1417,13 @@ mod tests {
             .module_path(Some("foo"))
             .file(Some("bar"))
             .line(Some(30))
+            .properties(&[("a", &"foo"), ("b", &"bar")])
             .build();
         assert_eq!(record_test.metadata().target(), "myApp");
         assert_eq!(record_test.module_path(), Some("foo"));
         assert_eq!(record_test.file(), Some("bar"));
         assert_eq!(record_test.line(), Some(30));
+        assert_eq!(record_test.properties().iter().count(), 2);
     }
 
     #[test]
@@ -1339,5 +1461,28 @@ mod tests {
         assert_eq!(record_test.module_path(), Some("foo"));
         assert_eq!(record_test.file(), Some("bar"));
         assert_eq!(record_test.line(), Some(30));
+    }
+
+    #[test]
+    fn test_empty_properties() {
+        use super::Record;
+
+        let record_test = Record::builder()
+            .build();
+        
+        assert_eq!(record_test.properties().iter().count(), 0);
+    }
+
+    #[test]
+    fn test_pushed_properties() {
+        use super::Record;
+
+        let record_test = Record::builder()
+            .properties(&[("a", &"foo"), ("b", &"bar")])
+            .build();
+        
+        let record_test = record_test.push(&[("c", &1)]);
+        
+        assert_eq!(record_test.properties().iter().count(), 3);
     }
 }
