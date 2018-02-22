@@ -284,6 +284,7 @@ use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 #[cfg(feature = "std")]
 use std::slice;
 
+use erased_serde::Serialize;
 
 #[macro_use]
 mod macros;
@@ -632,9 +633,108 @@ struct Header<'a> {
     line: Option<u32>,
 }
 
+#[derive(Debug)]
+pub enum Key<'a> {
+    Number(u64),
+    String(&'a str)
+}
+
+// TODO: Can we get away with removing the `'a` here?
+pub trait KeyValueSet<'a> {
+    fn len(&self) -> usize;
+    fn start(&self) -> Option<Key>;
+    fn next(&self, key: &Key) -> Option<((&'a str, &'a Serialize), Option<Key>)>;
+}
+
+trait AsKeyValueSet<'a> {
+    fn as_key_value_set(&'a self) -> &KeyValueSet<'a>;
+}
+
+impl<'a> KeyValueSet<'a> for &'a [(&'a str, &'a Serialize)] {
+    fn start(&self) -> Option<Key> {
+        Some(Key::Number(0))
+    }
+
+    fn len(&self) -> usize {
+        (*self).len()
+    }
+    
+    fn next(&self, key: &Key) -> Option<((&'a str, &'a Serialize), Option<Key>)> {
+        match *key {
+            Key::Number(n) => {
+                match self.get(n as usize) {
+                    Some(&(k, v)) => Some(((k, v), Some(Key::Number(n + 1)))),
+                    None => None
+                }
+            },
+            Key::String(_) => None
+        }
+    }
+}
+
+impl<'a, K, V> KeyValueSet<'a> for &'a Vec<(K, V)>
+where
+    K: Borrow<str>,
+    V: Serialize,
+{
+    fn start(&self) -> Option<Key> {
+        Some(Key::Number(0))
+    }
+
+    fn len(&self) -> usize {
+        (*self).len()
+    }
+    
+    fn next(&self, key: &Key) -> Option<((&'a str, &'a Serialize), Option<Key>)> {
+        match *key {
+            Key::Number(n) => {
+                match self.get(n as usize) {
+                    Some(&(ref k, ref v)) => Some(((k.borrow(), v), Some(Key::Number(n + 1)))),
+                    None => None
+                }
+            },
+            Key::String(_) => None
+        }
+    }
+}
+
+use std::collections::BTreeMap;
+use std::borrow::Borrow;
+use std::collections::Bound;
+
+impl<'a, K, V> KeyValueSet<'a> for &'a BTreeMap<K, V>
+where
+    K: Borrow<str> + Ord,
+    V: Serialize,
+{
+    fn start(&self) -> Option<Key> {
+        self.keys().next().map(|k| Key::String(k.borrow()))
+    }
+
+    fn len(&self) -> usize {
+        (*self).len()
+    }
+    
+    fn next(&self, key: &Key) -> Option<((&'a str, &'a Serialize), Option<Key>)> {
+        match *key {
+            Key::String(s) => {
+                let mut range = self.range((Bound::Included(s), Bound::Unbounded));
+                
+                let current = range.next();
+                let next = range.next();
+                
+                current.map(|(k, v)| {
+                    ((k.borrow(), v as &Serialize), next.map(|(k, _)| Key::String(k.borrow())))
+                })
+            },
+            Key::Number(_) => None
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Properties<'a> {
-    kv: &'a [(&'a str, &'a erased_serde::Serialize)],
+    kv: &'a KeyValueSet<'a>,
     parent: Option<&'a Properties<'a>>,
 }
 
@@ -653,15 +753,62 @@ impl<'a> fmt::Debug for Properties<'a> {
 impl<'a> Default for Properties<'a> {
     fn default() -> Self {
         Properties {
-            kv: &[],
+            kv: &(&[] as &[(&str, &Serialize)]),
             parent: None,
         }
     }
 }
 
+impl<'a> Properties<'a> {
+    // NOTE: This is pretty wacky...
+    // Lifetimes on trait objects are invariant
+    // If that's just being conservative then this is probably ok
+    // `KeyValueSet` only uses the lifetime to tie borrows of keys
+    fn variant<'b>(&'b self) -> &'b Properties<'b> where 'a: 'b {
+        use std::mem;
+
+        unsafe { mem::transmute::<&Properties<'a>, &Properties<'b>>(self) }
+    }
+}
+
+struct KeyValueSetIter<'a> {
+    current: Option<Key<'a>>,
+    kvs: &'a KeyValueSet<'a>,
+}
+
+impl<'a> KeyValueSetIter<'a> {
+    fn over(kvs: &'a KeyValueSet<'a>) -> Self {
+        KeyValueSetIter {
+            current: kvs.start(),
+            kvs
+        }
+    }
+}
+
+impl<'a> Iterator for KeyValueSetIter<'a> {
+    type Item = (&'a str, &'a Serialize);
+    
+    fn next(&mut self) -> Option<Self::Item> {
+        let (item, next) = if let Some(ref key) = self.current {
+            if let Some((item, next)) = self.kvs.next(key) {
+                (Some(item), next)
+            }
+            else {
+                (None, None)
+            }
+        }
+        else {
+            (None, None)
+        };
+        
+        self.current = next;
+        item
+    }
+}
+
 pub struct Iter<'a, 'b> where 'a: 'b {
     properties: &'b Properties<'a>,
-    iter: slice::Iter<'b, (&'a str, &'a erased_serde::Serialize)>,
+    iter: KeyValueSetIter<'a>,
 }
 
 impl<'a, 'b> fmt::Debug for Iter<'a, 'b> where 'a: 'b {
@@ -671,22 +818,22 @@ impl<'a, 'b> fmt::Debug for Iter<'a, 'b> where 'a: 'b {
 }
 
 impl<'a, 'b> Iterator for Iter<'a, 'b> where 'a: 'b {
-    type Item = (&'a str, &'a erased_serde::Serialize);
+    type Item = (&'a str, &'a Serialize);
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.iter.next() {
             None => {
                 if let Some(parent) = self.properties.parent.clone() {
                     self.properties = parent;
-                    self.iter = self.properties.kv.into_iter();
+                    self.iter = KeyValueSetIter::over(self.properties.kv);
 
-                    self.iter.next().cloned()
+                    self.iter.next()
                 }
                 else {
                     None
                 }
             },
-            item => item.cloned(),
+            item => item,
         }
     }
 }
@@ -703,12 +850,12 @@ impl<'a> Properties<'a> {
 
 impl<'a, 'b> IntoIterator for &'b Properties<'a> where 'a: 'b {
     type IntoIter = Iter<'a, 'b>;
-    type Item = (&'a str, &'a erased_serde::Serialize);
+    type Item = (&'a str, &'a Serialize);
 
     fn into_iter(self) -> Self::IntoIter {
         Iter {
             properties: &self,
-            iter: self.kv.into_iter()
+            iter: KeyValueSetIter::over(self.kv)
         }
     }
 }
@@ -764,19 +911,19 @@ impl<'a> Record<'a> {
 
     /// Get a new borrowed record with the additional properties.
     #[inline]
-    pub fn push<'b>(&'b self, properties: &'b [(&'b str, &'b erased_serde::Serialize)]) -> Record<'b> {
+    pub fn push<'b>(&'b self, properties: &'b KeyValueSet<'b>) -> Record<'b> {
         Record {
             header: Cow::Borrowed(&self.header),
             properties: Properties {
                 kv: properties,
-                parent: Some(&self.properties)
+                parent: Some(self.properties.variant())
             }
         }
     }
 
     #[inline]
     pub fn properties(&self) -> &Properties {
-        &self.properties
+        self.properties.variant()
     }
 }
 
@@ -905,7 +1052,7 @@ impl<'a> RecordBuilder<'a> {
 
     /// Set properties
     #[inline]
-    pub fn properties(&mut self, properties: &'a [(&'a str, &'a erased_serde::Serialize)]) -> &mut RecordBuilder<'a> {
+    pub fn properties(&mut self, properties: &'a KeyValueSet<'a>) -> &mut RecordBuilder<'a> {
         self.record.properties = Properties {
             kv: properties,
             parent: None,
@@ -1289,6 +1436,7 @@ mod tests {
     extern crate std;
     use tests::std::string::ToString;
     use super::{Level, LevelFilter, ParseLevelError};
+    use erased_serde::Serialize;
 
     #[test]
     fn test_levelfilter_from_str() {
@@ -1421,7 +1569,7 @@ mod tests {
             .module_path(Some("foo"))
             .file(Some("bar"))
             .line(Some(30))
-            .properties(&[("a", &"foo"), ("b", &"bar")])
+            .properties(&(&[("a", &"foo" as &Serialize), ("b", &"bar")] as &[(&str, &Serialize)]))
             .build();
         assert_eq!(record_test.metadata().target(), "myApp");
         assert_eq!(record_test.module_path(), Some("foo"));
@@ -1482,11 +1630,24 @@ mod tests {
         use super::Record;
 
         let record_test = Record::builder()
-            .properties(&[("a", &"foo"), ("b", &"bar")])
+            .properties(&(&[("a", &"foo" as &Serialize), ("b", &"bar")] as &[(&str, &Serialize)]))
             .build();
         
-        let record_test = record_test.push(&[("c", &1)]);
+        let record_test = record_test.push(&(&[("c", &1 as &Serialize)] as &[(&str, &Serialize)]));
         
         assert_eq!(record_test.properties().iter().count(), 3);
+    }
+
+    #[test]
+    fn test_borrowed_properties() {
+        use super::Record;
+
+        let props = &vec![("a", "foo"), ("b", "bar")];
+
+        let record_test = Record::builder()
+            .properties(&props)
+            .build();
+        
+        assert_eq!(record_test.properties().iter().count(), 2);
     }
 }
