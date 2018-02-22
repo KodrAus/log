@@ -284,7 +284,7 @@ use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 #[cfg(feature = "std")]
 use std::slice;
 
-use erased_serde::Serialize;
+pub use erased_serde::Serialize;
 
 #[macro_use]
 mod macros;
@@ -633,33 +633,24 @@ struct Header<'a> {
     line: Option<u32>,
 }
 
+// TODO: Can this be a trait borrowed from KeyValueSet?
 #[derive(Debug)]
 pub enum Key<'a> {
     Number(u64),
     String(&'a str)
 }
 
-// TODO: Can we get away with removing the `'a` here?
-pub trait KeyValueSet<'a> {
-    fn len(&self) -> usize;
+pub trait KeyValueSet {
     fn start(&self) -> Option<Key>;
-    fn next(&self, key: &Key) -> Option<((&'a str, &'a Serialize), Option<Key>)>;
+    fn next(&self, key: &Key) -> Option<((&str, &Serialize), Option<Key>)>;
 }
 
-trait AsKeyValueSet<'a> {
-    fn as_key_value_set(&'a self) -> &KeyValueSet<'a>;
-}
-
-impl<'a> KeyValueSet<'a> for &'a [(&'a str, &'a Serialize)] {
+impl<'a> KeyValueSet for &'a [(&'a str, &'a Serialize)] {
     fn start(&self) -> Option<Key> {
         Some(Key::Number(0))
     }
-
-    fn len(&self) -> usize {
-        (*self).len()
-    }
     
-    fn next(&self, key: &Key) -> Option<((&'a str, &'a Serialize), Option<Key>)> {
+    fn next(&self, key: &Key) -> Option<((&str, &Serialize), Option<Key>)> {
         match *key {
             Key::Number(n) => {
                 match self.get(n as usize) {
@@ -672,7 +663,7 @@ impl<'a> KeyValueSet<'a> for &'a [(&'a str, &'a Serialize)] {
     }
 }
 
-impl<'a, K, V> KeyValueSet<'a> for &'a Vec<(K, V)>
+impl<K, V> KeyValueSet for Vec<(K, V)>
 where
     K: Borrow<str>,
     V: Serialize,
@@ -680,12 +671,8 @@ where
     fn start(&self) -> Option<Key> {
         Some(Key::Number(0))
     }
-
-    fn len(&self) -> usize {
-        (*self).len()
-    }
     
-    fn next(&self, key: &Key) -> Option<((&'a str, &'a Serialize), Option<Key>)> {
+    fn next(&self, key: &Key) -> Option<((&str, &Serialize), Option<Key>)> {
         match *key {
             Key::Number(n) => {
                 match self.get(n as usize) {
@@ -702,7 +689,7 @@ use std::collections::BTreeMap;
 use std::borrow::Borrow;
 use std::collections::Bound;
 
-impl<'a, K, V> KeyValueSet<'a> for &'a BTreeMap<K, V>
+impl<K, V> KeyValueSet for BTreeMap<K, V>
 where
     K: Borrow<str> + Ord,
     V: Serialize,
@@ -711,11 +698,7 @@ where
         self.keys().next().map(|k| Key::String(k.borrow()))
     }
 
-    fn len(&self) -> usize {
-        (*self).len()
-    }
-    
-    fn next(&self, key: &Key) -> Option<((&'a str, &'a Serialize), Option<Key>)> {
+    fn next(&self, key: &Key) -> Option<((&str, &Serialize), Option<Key>)> {
         match *key {
             Key::String(s) => {
                 let mut range = self.range((Bound::Included(s), Bound::Unbounded));
@@ -734,7 +717,7 @@ where
 
 #[derive(Clone)]
 pub struct Properties<'a> {
-    kv: &'a KeyValueSet<'a>,
+    kv: &'a KeyValueSet,
     parent: Option<&'a Properties<'a>>,
 }
 
@@ -759,25 +742,13 @@ impl<'a> Default for Properties<'a> {
     }
 }
 
-impl<'a> Properties<'a> {
-    // NOTE: This is pretty wacky...
-    // Lifetimes on trait objects are invariant
-    // If that's just being conservative then this is probably ok
-    // `KeyValueSet` only uses the lifetime to tie borrows of keys
-    fn variant<'b>(&'b self) -> &'b Properties<'b> where 'a: 'b {
-        use std::mem;
-
-        unsafe { mem::transmute::<&Properties<'a>, &Properties<'b>>(self) }
-    }
-}
-
 struct KeyValueSetIter<'a> {
     current: Option<Key<'a>>,
-    kvs: &'a KeyValueSet<'a>,
+    kvs: &'a KeyValueSet,
 }
 
 impl<'a> KeyValueSetIter<'a> {
-    fn over(kvs: &'a KeyValueSet<'a>) -> Self {
+    fn over(kvs: &'a KeyValueSet) -> Self {
         KeyValueSetIter {
             current: kvs.start(),
             kvs
@@ -806,18 +777,22 @@ impl<'a> Iterator for KeyValueSetIter<'a> {
     }
 }
 
-pub struct Iter<'a, 'b> where 'a: 'b {
+/// An iterator over properties.
+/// 
+/// Properties aren't guaranteed to be unique (the same key may be repeated with different values).
+/// Properties also aren't guaranteed to be ordered.
+pub struct IntoIter<'a, 'b> where 'a: 'b {
     properties: &'b Properties<'a>,
     iter: KeyValueSetIter<'a>,
 }
 
-impl<'a, 'b> fmt::Debug for Iter<'a, 'b> where 'a: 'b {
+impl<'a, 'b> fmt::Debug for IntoIter<'a, 'b> where 'a: 'b {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Iter").finish()
     }
 }
 
-impl<'a, 'b> Iterator for Iter<'a, 'b> where 'a: 'b {
+impl<'a, 'b> Iterator for IntoIter<'a, 'b> where 'a: 'b {
     type Item = (&'a str, &'a Serialize);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -839,21 +814,23 @@ impl<'a, 'b> Iterator for Iter<'a, 'b> where 'a: 'b {
 }
 
 impl<'a> Properties<'a> {
-    pub fn iter<'b>(&'b self) -> Iter<'a, 'b> where 'a: 'b {
+    /// Iterate over the properties.
+    pub fn iter<'b>(&'b self) -> IntoIter<'a, 'b> where 'a: 'b {
         self.into_iter()
     }
 
+    /// Whether or not there are any properties.
     pub fn any(&self) -> bool {
-        self.kv.len() > 0 || self.parent.as_ref().map(|parent| parent.any()).unwrap_or(false)
+        KeyValueSetIter::over(self.kv).any(|_| true) || self.parent.as_ref().map(|parent| parent.any()).unwrap_or(false)
     }
 }
 
 impl<'a, 'b> IntoIterator for &'b Properties<'a> where 'a: 'b {
-    type IntoIter = Iter<'a, 'b>;
+    type IntoIter = IntoIter<'a, 'b>;
     type Item = (&'a str, &'a Serialize);
 
     fn into_iter(self) -> Self::IntoIter {
-        Iter {
+        IntoIter {
             properties: &self,
             iter: KeyValueSetIter::over(self.kv)
         }
@@ -911,19 +888,22 @@ impl<'a> Record<'a> {
 
     /// Get a new borrowed record with the additional properties.
     #[inline]
-    pub fn push<'b>(&'b self, properties: &'b KeyValueSet<'b>) -> Record<'b> {
+    pub fn push<'b>(&'b self, properties: &'b KeyValueSet) -> Record<'b> {
         Record {
             header: Cow::Borrowed(&self.header),
             properties: Properties {
                 kv: properties,
-                parent: Some(self.properties.variant())
+                parent: Some(&self.properties)
             }
         }
     }
 
+    /// The properties attached to this record.
+    /// 
+    /// Properties aren't guaranteed to be unique (the same key may be repeated with different values).
     #[inline]
     pub fn properties(&self) -> &Properties {
-        self.properties.variant()
+        &self.properties
     }
 }
 
@@ -1052,7 +1032,7 @@ impl<'a> RecordBuilder<'a> {
 
     /// Set properties
     #[inline]
-    pub fn properties(&mut self, properties: &'a KeyValueSet<'a>) -> &mut RecordBuilder<'a> {
+    pub fn properties(&mut self, properties: &'a KeyValueSet) -> &mut RecordBuilder<'a> {
         self.record.properties = Properties {
             kv: properties,
             parent: None,
@@ -1639,10 +1619,26 @@ mod tests {
     }
 
     #[test]
-    fn test_borrowed_properties() {
+    fn test_borrowed_properties_vec() {
         use super::Record;
 
-        let props = &vec![("a", "foo"), ("b", "bar")];
+        let props = vec![("a", "foo"), ("b", "bar")];
+
+        let record_test = Record::builder()
+            .properties(&props)
+            .build();
+        
+        assert_eq!(record_test.properties().iter().count(), 2);
+    }
+
+    #[test]
+    fn test_borrowed_properties_btreemap() {
+        use std::collections::BTreeMap;
+        use super::Record;
+
+        let mut props = BTreeMap::new();
+        props.insert("a", "foo");
+        props.insert("b", "bar");
 
         let record_test = Record::builder()
             .properties(&props)
