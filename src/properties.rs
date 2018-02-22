@@ -1,4 +1,7 @@
 use std::fmt;
+use std::collections::BTreeMap;
+use std::borrow::Borrow;
+use std::collections::Bound;
 
 pub use erased_serde::Serialize;
 
@@ -36,6 +39,56 @@ pub trait KeyValues {
     fn entry(&self, key: &Key) -> Option<Entry>;
 }
 
+impl<'a, K, V> KeyValues for [(K, V)]
+where
+    K: Borrow<str>,
+    V: Serialize,
+{
+    fn first(&self) -> Option<Entry> {
+        self.entry(&Key::Number(0))
+    }
+    
+    fn entry(&self, key: &Key) -> Option<Entry> {
+        match *key {
+            Key::Number(n) => {
+                match self.get(n as usize) {
+                    Some(&(ref k, ref v)) => Some(Entry::new(k.borrow(), v, Some(Key::Number(n + 1)))),
+                    None => None
+                }
+            },
+            Key::String(_) => None
+        }
+    }
+}
+
+impl<'a, K, V> KeyValues for &'a [(K, V)]
+where
+    K: Borrow<str>,
+    V: Serialize,
+{
+    fn first(&self) -> Option<Entry> {
+        KeyValues::first(*self)
+    }
+    
+    fn entry(&self, key: &Key) -> Option<Entry> {
+        (*self).entry(key)
+    }
+}
+
+impl<K, V> KeyValues for Vec<(K, V)>
+where
+    K: Borrow<str>,
+    V: Serialize,
+{
+    fn first(&self) -> Option<Entry> {
+        KeyValues::first(self.as_slice())
+    }
+
+    fn entry(&self, key: &Key) -> Option<Entry> {
+        self.as_slice().entry(key)
+    }
+}
+
 pub struct RawKeyValues<'a>(pub &'a [(&'a str, &'a Serialize)]);
 
 impl<'a> fmt::Debug for RawKeyValues<'a> {
@@ -53,54 +106,6 @@ impl<'a> KeyValues for RawKeyValues<'a> {
         self.0.entry(key)
     }
 }
-
-impl<'a, K, V> KeyValues for &'a [(K, V)]
-where
-    K: Borrow<str>,
-    V: Serialize,
-{
-    fn first(&self) -> Option<Entry> {
-        self.entry(&Key::Number(0))
-    }
-    
-    fn entry(&self, key: &Key) -> Option<Entry> {
-        match *key {
-            Key::Number(n) => {
-                match self.get(n as usize) {
-                    Some(&(ref k, ref v)) => Some(Entry::new(k.borrow(), v, Some(Key::Number(n + 1)))),
-                    None => None
-                }
-            },
-            Key::String(_) => None
-        }
-    }
-}
-
-impl<K, V> KeyValues for Vec<(K, V)>
-where
-    K: Borrow<str>,
-    V: Serialize,
-{
-    fn first(&self) -> Option<Entry> {
-        self.entry(&Key::Number(0))
-    }
-
-    fn entry(&self, key: &Key) -> Option<Entry> {
-        match *key {
-            Key::Number(n) => {
-                match self.get(n as usize) {
-                    Some(&(ref k, ref v)) => Some(Entry::new(k.borrow(), v, Some(Key::Number(n + 1)))),
-                    None => None
-                }
-            },
-            Key::String(_) => None
-        }
-    }
-}
-
-use std::collections::BTreeMap;
-use std::borrow::Borrow;
-use std::collections::Bound;
 
 impl<K, V> KeyValues for BTreeMap<K, V>
 where
