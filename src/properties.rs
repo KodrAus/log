@@ -393,7 +393,7 @@ impl<'a, 'b> Iterator for Iter<'a, 'b> where 'a: 'b {
     fn next(&mut self) -> Option<Self::Item> {
         match self.iter.next() {
             None => {
-                if let Some(parent) = self.properties.parent.clone() {
+                if let Some(parent) = self.properties.parent {
                     self.properties = parent;
                     self.iter = KeyValuesIter::over(self.properties.kvs);
 
