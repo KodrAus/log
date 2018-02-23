@@ -269,6 +269,7 @@ extern crate core as std;
 
 #[cfg(feature = "std")]
 extern crate erased_serde;
+extern crate serde;
 
 #[macro_use]
 extern crate cfg_if;
@@ -284,7 +285,7 @@ use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 
 #[macro_use]
 mod macros;
-mod serde;
+mod serde_support;
 pub mod properties;
 
 use self::properties::{Properties, KeyValues};
@@ -1438,5 +1439,51 @@ mod tests {
             .build();
         
         assert_eq!(record_test.properties().iter().count(), 2);
+    }
+
+    #[test]
+    fn test_property_as_bool() {
+        use super::Record;
+        use properties::RawKeyValues;
+
+        let record_test = Record::builder()
+            .properties(&RawKeyValues(&[("a", &"foo"), ("b", &true)]))
+            .build();
+
+        let expected = vec![
+            None,
+            Some(true)
+        ];
+
+        let actual: Vec<_> = record_test
+            .properties()
+            .iter()
+            .map(|p| p.as_bool())
+            .collect();
+        
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_property_as_string() {
+        use super::Record;
+        use properties::RawKeyValues;
+
+        let record_test = Record::builder()
+            .properties(&RawKeyValues(&[("a", &"foo"), ("b", &true)]))
+            .build();
+
+        let expected = vec![
+            Some(String::from("foo")),
+            None
+        ];
+
+        let actual: Vec<_> = record_test
+            .properties()
+            .iter()
+            .map(|p| p.as_string())
+            .collect();
+        
+        assert_eq!(actual, expected);
     }
 }

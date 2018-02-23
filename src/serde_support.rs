@@ -1,8 +1,5 @@
-#![cfg(feature = "serde")]
-
-extern crate serde;
-use self::serde::ser::{Serialize, Serializer};
-use self::serde::de::{Deserialize, DeserializeSeed, Deserializer, Visitor, EnumAccess,
+use serde::ser::{Serialize, Serializer};
+use serde::de::{Deserialize, DeserializeSeed, Deserializer, Visitor, EnumAccess,
                       VariantAccess, Error};
 
 use {Level, LevelFilter, LOG_LEVEL_NAMES};
