@@ -151,19 +151,50 @@ impl<'a> fmt::Debug for Property<'a> {
     }
 }
 
-// TODO: Can this be a trait borrowed from KeyValues?
 /// A key into a set of properties.
 /// 
 /// The key can either be an index or a reference to the last seen key.
-#[derive(Debug)]
-pub enum Key<'a> {
+#[derive(Debug, Clone, Copy)]
+pub struct Key<'a>(KeyInner<'a>);
+
+#[derive(Debug, Clone, Copy)]
+enum KeyInner<'a> {
     /// An index key.
     Number(u64),
     /// A reference to another key.
     String(&'a str)
 }
 
+impl<'a> From<u64> for Key<'a> {
+    fn from(key: u64) -> Self {
+        Key(KeyInner::Number(key))
+    }
+}
+
+impl<'a> From<&'a str> for Key<'a> {
+    fn from(key: &'a str) -> Self {
+        Key(KeyInner::String(key))
+    }
+}
+
+impl<'a> Key<'a> {
+    pub fn as_u64(&self) -> Option<u64> {
+        match self.0 {
+            KeyInner::Number(n) => Some(n),
+            _ => None
+        }
+    }
+
+    pub fn as_str(&self) -> Option<&str> {
+        match self.0 {
+            KeyInner::String(s) => Some(s.as_ref()),
+            _ => None
+        }
+    }
+}
+
 /// An entry within a key value set.
+#[derive(Clone, Copy)]
 pub struct Entry<'a> {
     key: &'a str,
     value: &'a Serialize,
@@ -181,11 +212,14 @@ impl<'a> Entry<'a> {
     /// 
     /// It's important that the next key follows the current one,
     /// and that each key is only seen once.
-    pub fn new(key: &'a str, value: &'a Serialize, next: Option<Key<'a>>) -> Self {
+    pub fn new<T>(key: &'a str, value: &'a Serialize, next: T) -> Self
+    where
+        T: Into<Option<Key<'a>>>
+    {
         Entry {
             key,
             value,
-            next,
+            next: next.into(),
         }
     }
 }
@@ -204,19 +238,16 @@ where
     V: Serialize,
 {
     fn first(&self) -> Option<Entry> {
-        self.entry(&Key::Number(0))
+        self.entry(&Key::from(0))
     }
     
     fn entry(&self, key: &Key) -> Option<Entry> {
-        match *key {
-            Key::Number(n) => {
-                match self.get(n as usize) {
-                    Some(&(ref k, ref v)) => Some(Entry::new(k.borrow(), v, Some(Key::Number(n + 1)))),
-                    None => None
-                }
-            },
-            Key::String(_) => None
-        }
+        key.as_u64().and_then(|n| {
+            match self.get(n as usize) {
+                Some(&(ref k, ref v)) => Some(Entry::new(k.borrow(), v, Key::from(n + 1))),
+                None => None
+            }
+        })
     }
 }
 
@@ -275,23 +306,20 @@ where
     fn first(&self) -> Option<Entry> {
         self.keys()
             .next()
-            .and_then(|k| self.entry(&Key::String(k.borrow())))
+            .and_then(|k| self.entry(&Key::from(k.borrow())))
     }
 
     fn entry(&self, key: &Key) -> Option<Entry> {
-        match *key {
-            Key::String(s) => {
-                let mut range = self.range((Bound::Included(s), Bound::Unbounded));
-                
-                let current = range.next();
-                let next = range.next();
-                
-                current.map(|(k, v)| {
-                    Entry::new(k.borrow(), v as &Serialize, next.map(|(k, _)| Key::String(k.borrow())))
-                })
-            },
-            Key::Number(_) => None
-        }
+        key.as_str().and_then(|s| {
+            let mut range = self.range((Bound::Included(s.as_ref()), Bound::Unbounded));
+            
+            let current = range.next();
+            let next = range.next();
+            
+            current.map(|(k, v)| {
+                Entry::new(k.borrow(), v, next.map(|(k, _)| Key::from(k.borrow())))
+            })
+        })
     }
 }
 
@@ -339,6 +367,7 @@ impl<'a> Default for Properties<'a> {
     }
 }
 
+#[derive(Clone, Copy)]
 struct KeyValuesIter<'a> {
     current: Option<Entry<'a>>,
     kvs: &'a KeyValues,
