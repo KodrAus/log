@@ -288,7 +288,8 @@ mod macros;
 mod serde_support;
 pub mod properties;
 
-use self::properties::{Properties, KeyValues};
+use self::properties::Properties;
+use self::properties::kv::KeyValues;
 
 // The LOGGER static holds a pointer to the global logger. It is protected by
 // the STATE static which determines whether LOGGER has been initialized yet.
@@ -1330,7 +1331,7 @@ mod tests {
     #[test]
     fn test_record_builder() {
         use super::{MetadataBuilder, RecordBuilder};
-        use properties::RawKeyValues;
+        use properties::kv::RawKeyValues;
         let target = "myApp";
         let metadata = MetadataBuilder::new().target(target).build();
         let fmt_args = format_args!("hello");
@@ -1399,7 +1400,7 @@ mod tests {
     #[test]
     fn test_pushed_properties() {
         use super::Record;
-        use properties::RawKeyValues;
+        use properties::kv::RawKeyValues;
 
         let record_test = Record::builder()
             .properties(&RawKeyValues(&[("a", &"foo"), ("b", &"bar")]))
@@ -1413,7 +1414,7 @@ mod tests {
     #[test]
     fn test_borrowed_properties_vec() {
         use super::Record;
-        use properties::RawKeyValues;
+        use properties::kv::RawKeyValues;
 
         let props = vec![("a", "foo"), ("b", "bar")];
 
@@ -1428,7 +1429,7 @@ mod tests {
     fn test_borrowed_properties_btreemap() {
         use std::collections::BTreeMap;
         use super::Record;
-        use properties::RawKeyValues;
+        use properties::kv::RawKeyValues;
 
         let mut props = BTreeMap::new();
         props.insert("a", "foo");
@@ -1444,7 +1445,7 @@ mod tests {
     #[test]
     fn test_property_as_bool() {
         use super::Record;
-        use properties::RawKeyValues;
+        use properties::kv::RawKeyValues;
 
         let record_test = Record::builder()
             .properties(&RawKeyValues(&[("a", &"foo"), ("b", &true)]))
@@ -1467,7 +1468,7 @@ mod tests {
     #[test]
     fn test_property_as_string() {
         use super::Record;
-        use properties::RawKeyValues;
+        use properties::kv::RawKeyValues;
 
         let record_test = Record::builder()
             .properties(&RawKeyValues(&[("a", &"foo"), ("b", &true)]))

@@ -8,12 +8,12 @@ use std::marker::PhantomData;
 
 use serde::ser::{self, Serialize as SerdeSerialize};
 
-pub use erased_serde::Serialize;
+pub mod kv;
 
 /// A single property with a key and a value.
 pub struct Property<'a> {
     key: &'a str,
-    value: &'a Serialize,
+    value: &'a kv::Serialize,
 }
 
 impl<'a> Property<'a> {
@@ -23,7 +23,7 @@ impl<'a> Property<'a> {
     }
 
     /// The value associated with this property.
-    pub fn value(&self) -> &Serialize {
+    pub fn value(&self) -> &kv::Serialize {
         &self.value
     }
 
@@ -151,194 +151,22 @@ impl<'a> fmt::Debug for Property<'a> {
     }
 }
 
-/// A key into a set of properties.
-/// 
-/// The key can either be an index or a reference to the last seen key.
-#[derive(Debug, Clone, Copy)]
-pub struct Key<'a>(KeyInner<'a>);
-
-#[derive(Debug, Clone, Copy)]
-enum KeyInner<'a> {
-    /// An index key.
-    Number(u64),
-    /// A reference to another key.
-    String(&'a str)
-}
-
-impl<'a> From<u64> for Key<'a> {
-    fn from(key: u64) -> Self {
-        Key(KeyInner::Number(key))
-    }
-}
-
-impl<'a> From<&'a str> for Key<'a> {
-    fn from(key: &'a str) -> Self {
-        Key(KeyInner::String(key))
-    }
-}
-
-impl<'a> Key<'a> {
-    pub fn as_u64(&self) -> Option<u64> {
-        match self.0 {
-            KeyInner::Number(n) => Some(n),
-            _ => None
-        }
-    }
-
-    pub fn as_str(&self) -> Option<&str> {
-        match self.0 {
-            KeyInner::String(s) => Some(s.as_ref()),
-            _ => None
-        }
-    }
-}
-
-/// An entry within a key value set.
-#[derive(Clone, Copy)]
-pub struct Entry<'a> {
-    key: &'a str,
-    value: &'a Serialize,
-    next: Option<Key<'a>>,
-}
-
-impl<'a> fmt::Debug for Entry<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Entry").finish()
-    }
-}
-
-impl<'a> Entry<'a> {
-    /// Create an entry from a key, value and optional next key.
-    /// 
-    /// It's important that the next key follows the current one,
-    /// and that each key is only seen once.
-    pub fn new<T>(key: &'a str, value: &'a Serialize, next: T) -> Self
-    where
-        T: Into<Option<Key<'a>>>
-    {
-        Entry {
-            key,
-            value,
-            next: next.into(),
-        }
-    }
-}
-
-/// A set of key value pairs that can be iterated though.
-pub trait KeyValues {
-    /// The first entry in the key value set.
-    fn first(&self) -> Option<Entry>;
-    /// A given entry in the key value set.
-    fn entry(&self, key: &Key) -> Option<Entry>;
-}
-
-impl<'a, K, V> KeyValues for [(K, V)]
-where
-    K: Borrow<str>,
-    V: Serialize,
-{
-    fn first(&self) -> Option<Entry> {
-        self.entry(&Key::from(0))
-    }
-    
-    fn entry(&self, key: &Key) -> Option<Entry> {
-        key.as_u64().and_then(|n| {
-            match self.get(n as usize) {
-                Some(&(ref k, ref v)) => Some(Entry::new(k.borrow(), v, Key::from(n + 1))),
-                None => None
-            }
-        })
-    }
-}
-
-impl<'a, K, V> KeyValues for &'a [(K, V)]
-where
-    K: Borrow<str>,
-    V: Serialize,
-{
-    fn first(&self) -> Option<Entry> {
-        KeyValues::first(*self)
-    }
-    
-    fn entry(&self, key: &Key) -> Option<Entry> {
-        (*self).entry(key)
-    }
-}
-
-impl<K, V> KeyValues for Vec<(K, V)>
-where
-    K: Borrow<str>,
-    V: Serialize,
-{
-    fn first(&self) -> Option<Entry> {
-        KeyValues::first(self.as_slice())
-    }
-
-    fn entry(&self, key: &Key) -> Option<Entry> {
-        self.as_slice().entry(key)
-    }
-}
-
-/// A raw set of key value pairs.
-pub struct RawKeyValues<'a>(pub &'a [(&'a str, &'a Serialize)]);
-
-impl<'a> fmt::Debug for RawKeyValues<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("RawKeyValues").finish()
-    }
-}
-
-impl<'a> KeyValues for RawKeyValues<'a> {
-    fn first(&self) -> Option<Entry> {
-        KeyValues::first(&self.0)
-    }
-    
-    fn entry(&self, key: &Key) -> Option<Entry> {
-        self.0.entry(key)
-    }
-}
-
-impl<K, V> KeyValues for BTreeMap<K, V>
-where
-    K: Borrow<str> + Ord,
-    V: Serialize,
-{
-    fn first(&self) -> Option<Entry> {
-        self.keys()
-            .next()
-            .and_then(|k| self.entry(&Key::from(k.borrow())))
-    }
-
-    fn entry(&self, key: &Key) -> Option<Entry> {
-        key.as_str().and_then(|s| {
-            let mut range = self.range((Bound::Included(s.as_ref()), Bound::Unbounded));
-            
-            let current = range.next();
-            let next = range.next();
-            
-            current.map(|(k, v)| {
-                Entry::new(k.borrow(), v, next.map(|(k, _)| Key::from(k.borrow())))
-            })
-        })
-    }
-}
-
 /// A chain of properties.
 #[derive(Clone)]
 pub struct Properties<'a> {
-    kvs: &'a KeyValues,
+    kvs: &'a kv::KeyValues,
     parent: Option<&'a Properties<'a>>,
 }
 
 impl<'a> Properties<'a> {
-    pub(crate) fn root(properties: &'a KeyValues) -> Self {
+    pub(crate) fn root(properties: &'a kv::KeyValues) -> Self {
         Properties {
             kvs: properties,
             parent: None
         }
     }
 
-    pub(crate) fn chained(properties: &'a KeyValues, parent: &'a Properties) -> Self {
+    pub(crate) fn chained(properties: &'a kv::KeyValues, parent: &'a Properties) -> Self {
         Properties {
             kvs: properties,
             parent: Some(parent)
@@ -361,42 +189,8 @@ impl<'a> fmt::Debug for Properties<'a> {
 impl<'a> Default for Properties<'a> {
     fn default() -> Self {
         Properties {
-            kvs: &RawKeyValues(&[]),
+            kvs: &kv::RawKeyValues(&[]),
             parent: None,
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-struct KeyValuesIter<'a> {
-    current: Option<Entry<'a>>,
-    kvs: &'a KeyValues,
-}
-
-impl<'a> KeyValuesIter<'a> {
-    fn over(kvs: &'a KeyValues) -> Self {
-        KeyValuesIter {
-            current: kvs.first(),
-            kvs
-        }
-    }
-}
-
-impl<'a> Iterator for KeyValuesIter<'a> {
-    type Item = Property<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(Entry { key, value, next, .. }) = self.current.take() {
-            let next = next.and_then(|ref key| self.kvs.entry(key));
-            self.current = next;
-
-            Some(Property {
-                key,
-                value,
-            })
-        }
-        else {
-            None
         }
     }
 }
@@ -407,7 +201,7 @@ impl<'a> Iterator for KeyValuesIter<'a> {
 /// Properties also aren't guaranteed to be ordered.
 pub struct Iter<'a, 'b> where 'a: 'b {
     properties: &'b Properties<'a>,
-    iter: KeyValuesIter<'a>,
+    iter: kv::Iter<'a>,
 }
 
 impl<'a, 'b> fmt::Debug for Iter<'a, 'b> where 'a: 'b {
@@ -424,15 +218,15 @@ impl<'a, 'b> Iterator for Iter<'a, 'b> where 'a: 'b {
             None => {
                 if let Some(parent) = self.properties.parent {
                     self.properties = parent;
-                    self.iter = KeyValuesIter::over(self.properties.kvs);
+                    self.iter = self.properties.kvs.into_iter();
 
-                    self.iter.next()
+                    self.iter.next().map(|(key, value)| Property { key, value })
                 }
                 else {
                     None
                 }
             },
-            item => item,
+            item => item.map(|(key, value)| Property { key, value }),
         }
     }
 }
@@ -445,7 +239,7 @@ impl<'a> Properties<'a> {
 
     /// Whether or not there are any properties.
     pub fn any(&self) -> bool {
-        KeyValuesIter::over(self.kvs).any(|_| true) || self.parent.as_ref().map(|parent| parent.any()).unwrap_or(false)
+        self.kvs.into_iter().any(|_| true) || self.parent.as_ref().map(|parent| parent.any()).unwrap_or(false)
     }
 }
 
@@ -456,7 +250,7 @@ impl<'a, 'b> IntoIterator for &'b Properties<'a> where 'a: 'b {
     fn into_iter(self) -> Self::IntoIter {
         Iter {
             properties: &self,
-            iter: KeyValuesIter::over(self.kvs)
+            iter: self.kvs.into_iter()
         }
     }
 }
@@ -625,7 +419,7 @@ where
         _variant: &'static str,
         _value: &T
     ) -> Result<Self::Ok, Self::Error>
-        where T: ?Sized + Serialize
+        where T: ?Sized + kv::Serialize
     {
         Err(UnsupportedValue)
     }
