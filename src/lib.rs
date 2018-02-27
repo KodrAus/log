@@ -290,8 +290,7 @@ mod macros;
 mod serde_support;
 pub mod properties;
 
-use self::properties::Properties;
-use self::properties::kv::KeyValues;
+use self::properties::{KeyValues, Properties};
 
 // The LOGGER static holds a pointer to the global logger. It is protected by
 // the STATE static which determines whether LOGGER has been initialized yet.
