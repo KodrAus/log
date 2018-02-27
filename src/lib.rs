@@ -270,6 +270,8 @@ extern crate core as std;
 #[cfg(feature = "std")]
 extern crate erased_serde;
 extern crate serde;
+#[macro_use]
+extern crate serde_derive;
 
 #[macro_use]
 extern crate cfg_if;

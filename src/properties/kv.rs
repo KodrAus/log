@@ -1,3 +1,5 @@
+//! Object-safe iteration for key-value pairs.
+
 use std::fmt;
 use std::collections::BTreeMap;
 use std::borrow::Borrow;
@@ -32,6 +34,17 @@ impl<'a> From<&'a str> for Key<'a> {
 }
 
 impl<'a> Key<'a> {
+    /// Create a key from a `u64` index.
+    pub fn from_u64(key: u64) -> Self {
+        Self::from(key)
+    }
+
+    /// Create a key from a borrowed string.
+    pub fn from_str(key: &'a str) -> Self {
+        Self::from(key)
+    }
+
+    /// Get the key value as a `u64` index.
     pub fn as_u64(&self) -> Option<u64> {
         match self.0 {
             KeyInner::Number(n) => Some(n),
@@ -39,6 +52,7 @@ impl<'a> Key<'a> {
         }
     }
 
+    /// Get the key value as a borrowed string.
     pub fn as_str(&self) -> Option<&str> {
         match self.0 {
             KeyInner::String(s) => Some(s.as_ref()),
@@ -139,7 +153,7 @@ impl<'a> Iterator for Iter<'a> {
     }
 }
 
-/// A raw set of key value pairs.
+#[doc(hidden)]
 pub struct RawKeyValues<'a>(pub &'a [(&'a str, &'a Serialize)]);
 
 impl<'a> fmt::Debug for RawKeyValues<'a> {

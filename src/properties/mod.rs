@@ -1,16 +1,14 @@
 //! Log record properties.
 
 use std::{fmt, error};
-use std::collections::BTreeMap;
-use std::borrow::Borrow;
-use std::collections::Bound;
 use std::marker::PhantomData;
 
-use serde::ser::{self, Serialize as SerdeSerialize};
+use serde::ser::{self, Serialize as Serialize, Serializer as Serializer, SerializeMap};
 
 pub mod kv;
 
 /// A single property with a key and a value.
+#[derive(Serialize)]
 pub struct Property<'a> {
     key: &'a str,
     value: &'a kv::Serialize,
@@ -252,6 +250,21 @@ impl<'a, 'b> IntoIterator for &'b Properties<'a> where 'a: 'b {
             properties: &self,
             iter: self.kvs.into_iter()
         }
+    }
+}
+
+impl<'a> Serialize for Properties<'a> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer
+    {
+        let mut map = serializer.serialize_map(None)?;
+
+        for property in self {
+            map.serialize_entry(property.key(), property.value())?;
+        }
+
+        map.end()
     }
 }
 
