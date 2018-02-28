@@ -38,7 +38,8 @@ release_max_level_trace = []
 
 default = ["std"]
 
-std = ["erased-serde"]
+std = ["serde/std", "erased-serde/std"]
+alloc = ["serde/alloc", "erased-serde/alloc"]
 
 [badges]
 travis-ci = { repository = "rust-lang-nursery/log" }
@@ -46,9 +47,9 @@ appveyor = { repository = "alexcrichton/log" }
 
 [dependencies]
 cfg-if = "0.1.2"
-serde = { version = "1.0", default-features = false }
-erased-serde = { version = "*", optional = true }
-serde_derive = "1.0"
+serde = { version = "1.0", default-features = false, optional = true }
+erased-serde = { version = "*", path = "../erased-serde", default-features = false, optional = true }
 
-[dev-dependencies]
-serde_test = "1.0"
+# dev dependencies are pulling in std
+# [dev-dependencies]
+# serde_test = "1.0"

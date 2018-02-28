@@ -267,11 +267,10 @@
 #[cfg(not(feature = "std"))]
 extern crate core as std;
 
-#[cfg(feature = "std")]
+#[cfg(any(feature = "std", feature = "alloc"))]
 extern crate erased_serde;
+#[cfg(feature = "serde")]
 extern crate serde;
-#[macro_use]
-extern crate serde_derive;
 
 #[macro_use]
 extern crate cfg_if;
@@ -282,15 +281,16 @@ use std::error;
 use std::fmt;
 use std::mem;
 use std::str::FromStr;
-use std::borrow::Cow;
 use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 
 #[macro_use]
 mod macros;
-mod serde_support;
-pub mod properties;
 
-use self::properties::{KeyValues, Properties};
+#[cfg(feature = "serde")]
+mod serde_support;
+
+#[cfg(feature = "erased-serde")]
+pub mod properties;
 
 // The LOGGER static holds a pointer to the global logger. It is protected by
 // the STATE static which determines whether LOGGER has been initialized yet.
@@ -622,8 +622,9 @@ impl LevelFilter {
 /// [`target()`]: struct.Record.html#method.target
 #[derive(Clone, Debug)]
 pub struct Record<'a> {
-    header: Cow<'a, Header<'a>>,
-    properties: Properties<'a>,
+    header: Header<'a>,
+    #[cfg(feature = "erased-serde")]
+    properties: properties::Properties<'a>,
 }
 
 #[derive(Clone, Debug)]
@@ -686,10 +687,11 @@ impl<'a> Record<'a> {
 
     /// Get a new borrowed record with the additional properties.
     #[inline]
-    pub fn push<'b>(&'b self, properties: &'b KeyValues) -> Record<'b> {
+    #[cfg(feature = "erased-serde")]
+    pub fn push<'b>(&'b self, properties: &'b properties::KeyValues) -> Record<'b> {
         Record {
-            header: Cow::Borrowed(&self.header),
-            properties: Properties::chained(properties, &self.properties)
+            header: self.header.clone(),
+            properties: properties::Properties::chained(properties, &self.properties)
         }
     }
 
@@ -697,7 +699,8 @@ impl<'a> Record<'a> {
     /// 
     /// Properties aren't guaranteed to be unique (the same key may be repeated with different values).
     #[inline]
-    pub fn properties(&self) -> &Properties {
+    #[cfg(feature = "erased-serde")]
+    pub fn properties(&self) -> &properties::Properties {
         &self.properties
     }
 }
@@ -764,13 +767,14 @@ impl<'a> RecordBuilder<'a> {
     pub fn new() -> RecordBuilder<'a> {
         RecordBuilder {
             record: Record {
-                header: Cow::Owned(Header {
+                header: Header {
                     args: format_args!(""),
                     metadata: Metadata::builder().build(),
                     module_path: None,
                     file: None,
                     line: None,
-                }),
+                },
+                #[cfg(feature = "erased-serde")]
                 properties: Default::default()
             },
         }
@@ -779,56 +783,57 @@ impl<'a> RecordBuilder<'a> {
     /// Set [`args`](struct.Record.html#method.args).
     #[inline]
     pub fn args(&mut self, args: fmt::Arguments<'a>) -> &mut RecordBuilder<'a> {
-        self.record.header.to_mut().args = args;
+        self.record.header.args = args;
         self
     }
 
     /// Set [`metadata`](struct.Record.html#method.metadata). Construct a `Metadata` object with [`MetadataBuilder`](struct.MetadataBuilder.html).
     #[inline]
     pub fn metadata(&mut self, metadata: Metadata<'a>) -> &mut RecordBuilder<'a> {
-        self.record.header.to_mut().metadata = metadata;
+        self.record.header.metadata = metadata;
         self
     }
 
     /// Set [`Metadata::level`](struct.Metadata.html#method.level).
     #[inline]
     pub fn level(&mut self, level: Level) -> &mut RecordBuilder<'a> {
-        self.record.header.to_mut().metadata.level = level;
+        self.record.header.metadata.level = level;
         self
     }
 
     /// Set [`Metadata::target`](struct.Metadata.html#method.target)
     #[inline]
     pub fn target(&mut self, target: &'a str) -> &mut RecordBuilder<'a> {
-        self.record.header.to_mut().metadata.target = target;
+        self.record.header.metadata.target = target;
         self
     }
 
     /// Set [`module_path`](struct.Record.html#method.module_path)
     #[inline]
     pub fn module_path(&mut self, path: Option<&'a str>) -> &mut RecordBuilder<'a> {
-        self.record.header.to_mut().module_path = path;
+        self.record.header.module_path = path;
         self
     }
 
     /// Set [`file`](struct.Record.html#method.file)
     #[inline]
     pub fn file(&mut self, file: Option<&'a str>) -> &mut RecordBuilder<'a> {
-        self.record.header.to_mut().file = file;
+        self.record.header.file = file;
         self
     }
 
     /// Set [`line`](struct.Record.html#method.line)
     #[inline]
     pub fn line(&mut self, line: Option<u32>) -> &mut RecordBuilder<'a> {
-        self.record.header.to_mut().line = line;
+        self.record.header.line = line;
         self
     }
 
     /// Set properties
     #[inline]
-    pub fn properties(&mut self, properties: &'a KeyValues) -> &mut RecordBuilder<'a> {
-        self.record.properties = Properties::root(properties);
+    #[cfg(feature = "erased-serde")]
+    pub fn properties(&mut self, properties: &'a properties::KeyValues) -> &mut RecordBuilder<'a> {
+        self.record.properties = properties::Properties::root(properties);
         self
     }
 

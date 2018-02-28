@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use serde;
+
 pub use erased_serde::Serialize;
 
 pub trait Serializer {
@@ -25,12 +27,21 @@ impl<T, K, V> KeyValues for T
 where
     for<'a> &'a T: IntoIterator<Item = (K, V)>,
     K: AsRef<str>,
-    V: Serialize
+    V: serde::Serialize
 {
     fn serialize(&self, serializer: &mut Serializer) {
         for (key, value) in self.into_iter() {
             serializer.serialize_entry(key.as_ref(), &value);
         }
+    }
+}
+
+impl<T> Serializer for T
+where
+    T: serde::ser::SerializeMap
+{
+    fn serialize_entry(&mut self, key: &str, value: &Serialize) {
+        let _ = serde::ser::SerializeMap::serialize_entry(self, key, value);
     }
 }
 
@@ -72,6 +83,21 @@ impl<'a> KeyValues for Properties<'a> {
         if let Some(parent) = self.parent {
             parent.serialize(serializer);
         }
+    }
+}
+
+impl<'a> serde::Serialize for Properties<'a> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer
+    {
+        use serde::ser::SerializeMap;
+
+        let mut map = serializer.serialize_map(None)?;
+
+        KeyValues::serialize(self, &mut map);
+
+        map.end()
     }
 }
 
