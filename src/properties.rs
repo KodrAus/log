@@ -9,7 +9,7 @@ pub use erased_serde::Serialize as Value;
 /// A serializer for key value pairs.
 pub trait Serializer {
     /// Serialize the key and value.
-    fn serialize_kv(&mut self, key: &str, value: &Value);
+    fn serialize_kv(&mut self, kv: &KeyValue);
 }
 
 /// A set of key value pairs that can be serialized.
@@ -69,7 +69,7 @@ where
 {
     fn serialize(&self, serializer: &mut Serializer) {
         for kv in self.into_iter() {
-            serializer.serialize_kv(kv.key(), kv.value());
+            serializer.serialize_kv(&kv);
         }
     }
 }
@@ -78,8 +78,8 @@ impl<T> Serializer for T
 where
     T: serde::ser::SerializeMap
 {
-    fn serialize_kv(&mut self, key: &str, value: &Value) {
-        let _ = serde::ser::SerializeMap::serialize_entry(self, key, value);
+    fn serialize_kv(&mut self, kv: &KeyValue) {
+        let _ = serde::ser::SerializeMap::serialize_entry(self, kv.key(), kv.value());
     }
 }
 
