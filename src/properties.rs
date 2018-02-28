@@ -4,18 +4,22 @@ use std::fmt;
 
 use serde;
 
-pub use erased_serde::Serialize;
+pub use erased_serde::Serialize as Value;
 
+/// A serializer for key value pairs.
 pub trait Serializer {
-    fn serialize_entry(&mut self, key: &str, value: &Serialize);
+    /// Serialize the key and value.
+    fn serialize_kv(&mut self, key: &str, value: &Value);
 }
 
+/// A set of key value pairs that can be serialized.
 pub trait KeyValues {
+    /// Serialize the key value pairs.
     fn serialize(&self, serializer: &mut Serializer);
 }
 
 #[doc(hidden)]
-pub struct RawKeyValues<'a>(pub &'a [(&'a str, &'a Serialize)]);
+pub struct RawKeyValues<'a>(pub &'a [(&'a str, &'a Value)]);
 
 impl<'a> fmt::Debug for RawKeyValues<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -23,15 +27,49 @@ impl<'a> fmt::Debug for RawKeyValues<'a> {
     }
 }
 
-impl<T, K, V> KeyValues for T
+/// A single key value pair.
+pub trait KeyValue {
+    /// Get the key.
+    fn key(&self) -> &str;
+    /// Get the value.
+    fn value(&self) -> &Value;
+}
+
+impl<K, V> KeyValue for (K, V)
 where
-    for<'a> &'a T: IntoIterator<Item = (K, V)>,
     K: AsRef<str>,
-    V: serde::Serialize
+    V: serde::Serialize,
+{
+    fn key(&self) -> &str {
+        self.0.as_ref()
+    }
+
+    fn value(&self) -> &Value {
+        &self.1
+    }
+}
+
+impl<'a, T: ?Sized> KeyValue for &'a T
+where
+    T: KeyValue
+{
+    fn key(&self) -> &str {
+        (*self).key()
+    }
+
+    fn value(&self) -> &Value {
+        (*self).value()
+    }
+}
+
+impl<'a, T: ?Sized, KV> KeyValues for &'a T
+where
+    &'a T: IntoIterator<Item = KV>,
+    KV: KeyValue
 {
     fn serialize(&self, serializer: &mut Serializer) {
-        for (key, value) in self.into_iter() {
-            serializer.serialize_entry(key.as_ref(), &value);
+        for kv in self.into_iter() {
+            serializer.serialize_kv(kv.key(), kv.value());
         }
     }
 }
@@ -40,16 +78,14 @@ impl<T> Serializer for T
 where
     T: serde::ser::SerializeMap
 {
-    fn serialize_entry(&mut self, key: &str, value: &Serialize) {
+    fn serialize_kv(&mut self, key: &str, value: &Value) {
         let _ = serde::ser::SerializeMap::serialize_entry(self, key, value);
     }
 }
 
 impl<'a> KeyValues for RawKeyValues<'a> {
     fn serialize(&self, serializer: &mut Serializer) {
-        for &(key, value) in self.0.iter() {
-            serializer.serialize_entry(key.as_ref(), &value);
-        }
+        self.0.serialize(serializer)
     }
 }
 
