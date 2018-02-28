@@ -1345,7 +1345,7 @@ mod tests {
     #[test]
     fn test_record_builder() {
         use super::{MetadataBuilder, RecordBuilder};
-        use properties::kv::RawKeyValues;
+        use properties::RawKeyValues;
         let target = "myApp";
         let metadata = MetadataBuilder::new().target(target).build();
         let fmt_args = format_args!("hello");
@@ -1355,13 +1355,12 @@ mod tests {
             .module_path(Some("foo"))
             .file(Some("bar"))
             .line(Some(30))
-            .properties(&RawKeyValues(&[("a", &"foo"), ("b", &"bar")]))
+            .properties(&RawKeyValues(&[("a", &"foo"), ("b", &1)]))
             .build();
         assert_eq!(record_test.metadata().target(), "myApp");
         assert_eq!(record_test.module_path(), Some("foo"));
         assert_eq!(record_test.file(), Some("bar"));
         assert_eq!(record_test.line(), Some(30));
-        assert_eq!(record_test.properties().iter().count(), 2);
     }
 
     #[test]
@@ -1399,106 +1398,5 @@ mod tests {
         assert_eq!(record_test.module_path(), Some("foo"));
         assert_eq!(record_test.file(), Some("bar"));
         assert_eq!(record_test.line(), Some(30));
-    }
-
-    #[test]
-    fn test_empty_properties() {
-        use super::Record;
-
-        let record_test = Record::builder()
-            .build();
-        
-        assert_eq!(record_test.properties().iter().count(), 0);
-    }
-
-    #[test]
-    fn test_pushed_properties() {
-        use super::Record;
-        use properties::kv::RawKeyValues;
-
-        let record_test = Record::builder()
-            .properties(&RawKeyValues(&[("a", &"foo"), ("b", &"bar")]))
-            .build();
-        
-        let record_test = record_test.push(&RawKeyValues(&[("c", &1)]));
-        
-        assert_eq!(record_test.properties().iter().count(), 3);
-    }
-
-    #[test]
-    fn test_borrowed_properties_vec() {
-        use super::Record;
-        use properties::kv::RawKeyValues;
-
-        let props = vec![("a", "foo"), ("b", "bar")];
-
-        let record_test = Record::builder()
-            .properties(&props)
-            .build();
-        
-        assert_eq!(record_test.properties().iter().count(), 2);
-    }
-
-    #[test]
-    fn test_borrowed_properties_btreemap() {
-        use std::collections::BTreeMap;
-        use super::Record;
-        use properties::kv::RawKeyValues;
-
-        let mut props = BTreeMap::new();
-        props.insert("a", "foo");
-        props.insert("b", "bar");
-
-        let record_test = Record::builder()
-            .properties(&props)
-            .build();
-        
-        assert_eq!(record_test.properties().iter().count(), 2);
-    }
-
-    #[test]
-    fn test_property_as_bool() {
-        use super::Record;
-        use properties::kv::RawKeyValues;
-
-        let record_test = Record::builder()
-            .properties(&RawKeyValues(&[("a", &"foo"), ("b", &true)]))
-            .build();
-
-        let expected = vec![
-            None,
-            Some(true)
-        ];
-
-        let actual: Vec<_> = record_test
-            .properties()
-            .iter()
-            .map(|p| p.as_bool())
-            .collect();
-        
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn test_property_as_string() {
-        use super::Record;
-        use properties::kv::RawKeyValues;
-
-        let record_test = Record::builder()
-            .properties(&RawKeyValues(&[("a", &"foo"), ("b", &true)]))
-            .build();
-
-        let expected = vec![
-            Some(String::from("foo")),
-            None
-        ];
-
-        let actual: Vec<_> = record_test
-            .properties()
-            .iter()
-            .map(|p| p.as_string())
-            .collect();
-        
-        assert_eq!(actual, expected);
     }
 }
