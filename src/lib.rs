@@ -289,7 +289,6 @@ mod macros;
 #[cfg(feature = "serde")]
 mod serde_support;
 
-#[cfg(feature = "erased-serde")]
 pub mod properties;
 
 // The LOGGER static holds a pointer to the global logger. It is protected by
@@ -700,8 +699,17 @@ impl<'a> Record<'a> {
     /// Properties aren't guaranteed to be unique (the same key may be repeated with different values).
     #[inline]
     #[cfg(feature = "erased-serde")]
-    pub fn properties(&self) -> &properties::Properties {
-        &self.properties
+    pub fn properties(&self) -> Option<&properties::Properties> {
+        Some(&self.properties)
+    }
+
+    /// The properties attached to this record.
+    /// 
+    /// Properties aren't guaranteed to be unique (the same key may be repeated with different values).
+    #[inline]
+    #[cfg(not(feature = "erased-serde"))]
+    pub fn properties(&self) -> Option<&properties::Properties> {
+        None
     }
 }
 
