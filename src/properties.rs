@@ -67,12 +67,83 @@ mod imp {
         }
     }
 
-    impl<T> Serializer for T
-    where
-        T: serde::ser::SerializeMap
+    #[derive(Debug)]
+    pub struct SerializeMap<T>(T);
+
+    impl<T> SerializeMap<T> {
+        pub fn new(inner: T) -> Self {
+            SerializeMap(inner)
+        }
+
+        pub fn into_inner(self) -> T {
+            self.0
+        }
+    }
+
+    impl<T> Serializer for SerializeMap<T>
+        where
+            T: serde::ser::SerializeMap
     {
         fn serialize_kv(&mut self, kv: &KeyValue) {
-            let _ = serde::ser::SerializeMap::serialize_entry(self, kv.key(), kv.value());
+            let _ = serde::ser::SerializeMap::serialize_entry(&mut self.0, kv.key(), kv.value());
+        }
+    }
+
+    impl<KV> serde::Serialize for SerializeMap<KV>
+        where
+            KV: KeyValues,
+    {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer
+        {
+            use serde::ser::SerializeMap as SerializeTrait;
+
+            let mut map = SerializeMap::new(serializer.serialize_map(None)?);
+
+            KeyValues::serialize(&self.0, &mut map);
+
+            map.into_inner().end()
+        }
+    }
+
+    #[derive(Debug)]
+    pub struct SerializeSeq<T>(T);
+
+    impl<T> SerializeSeq<T> {
+        pub fn new(inner: T) -> Self {
+            SerializeSeq(inner)
+        }
+
+        pub fn into_inner(self) -> T {
+            self.0
+        }
+    }
+
+    impl<T> Serializer for SerializeSeq<T>
+        where
+            T: serde::ser::SerializeSeq
+    {
+        fn serialize_kv(&mut self, kv: &KeyValue) {
+            let _ = serde::ser::SerializeSeq::serialize_element(&mut self.0, &(kv.key(), kv.value()));
+        }
+    }
+
+    impl<KV> serde::Serialize for SerializeSeq<KV>
+        where
+            KV: KeyValues,
+    {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer
+        {
+            use serde::ser::SerializeSeq as SerializeTrait;
+
+            let mut seq = SerializeSeq::new(serializer.serialize_seq(None)?);
+
+            KeyValues::serialize(&self.0, &mut seq);
+
+            seq.into_inner().end()
         }
     }
 
@@ -112,6 +183,14 @@ mod imp {
                 parent: Some(parent)
             }
         }
+
+        pub fn serialize_map(&self) -> SerializeMap<&Self> {
+            SerializeMap::new(&self)
+        }
+
+        pub fn serialize_seq(&self) -> SerializeSeq<&Self> {
+            SerializeSeq::new(&self)
+        }
     }
 
     impl<'a> KeyValues for Properties<'a> {
@@ -121,21 +200,6 @@ mod imp {
             if let Some(parent) = self.parent {
                 parent.serialize(serializer);
             }
-        }
-    }
-
-    impl<'a> serde::Serialize for Properties<'a> {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer
-        {
-            use serde::ser::SerializeMap;
-
-            let mut map = serializer.serialize_map(None)?;
-
-            KeyValues::serialize(self, &mut map);
-
-            map.end()
         }
     }
 
