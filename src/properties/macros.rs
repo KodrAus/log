@@ -1,37 +1,3 @@
-/*!
-This example demonstrates a potential macro for capturing log properties.
-
-The macro uses a syntax that's _similar_ to struct literals. The idea is to support
-extensions to the way properties are captured using attributes.
-
-There's a bit of a misalignment between how formatting is communicated in the log
-message and the contextual properties, but they are a bit different. Args are slurped 
-up into the message using the formatting API whereas properties are exposed as data.
-
-Attributes use the following syntax:
-
-- `#[log(adapter)]` where `adapter` is a free function in `adapter::map` that takes a
-generic value `&T` as an argument and returns `impl ToValue`.
-- `#[log(adapter = state)]` where `adapter` is a free function in `adapter::map_with` that 
-takes a generic value `&T` and `state` `S` and returns `impl ToValue`.
-
-There are a few root adapters:
-
-- `debug`: formats the property value using its `Debug` implementation
-- `display`: formats the property using its `Display` implementation
-
-There are a few adapters that take additional state:
-
-- `fmt`: takes a function that's compatible with one of the `std::fmt` traits and uses
-it to format the property value
-- `with`: takes some function that maps a generic value `&T` to some `impl ToValue`.
-This is an integration point for arbitrary formatters.
-
-A downside of using attributes is thst one might expect standard Rust macros to work
-in the same context, which they currently won't. A proc-macro based solution might be
-a bit more robust and make it possible to treat the `#[log]` attributes as any other.
-*/
-
 #[macro_export]
 macro_rules! properties(
     // Do nothing
@@ -223,7 +189,6 @@ macro_rules! __properties_internal(
     };
 
     // Use the value with no adapter
-    // In this example we just print it
     (@ with_value {
         stream: [$($stream:tt)*],
         adapter_fn: $adapter_fn:expr,
@@ -233,7 +198,7 @@ macro_rules! __properties_internal(
     }) => {
         let value = &$value;
         let adapter = $adapter_fn(value);
-        let kvs = $crate::properties::RawKeyValue(stringify!($key), &adapter);
+        let kvs = $crate::properties::RawKeyValues(stringify!($key), &adapter);
 
         let $properties = $crate::properties::Properties::chained(&kvs, &$properties);
 
