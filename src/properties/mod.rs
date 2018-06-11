@@ -277,21 +277,6 @@ impl<'a> KeyValues for RawKeyValues<'a> {
     }
 }
 
-#[doc(hidden)]
-pub struct RawKeyValue<'a>(pub &'a str, pub &'a dyn ToValue);
-
-impl<'a> fmt::Debug for RawKeyValue<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("RawKeyValue").finish()
-    }
-}
-
-impl<'a> KeyValues for RawKeyValue<'a> {
-    fn serialize(&self, serializer: &mut dyn Serializer) {
-        serializer.serialize_kv(&(self.0, self.1))
-    }
-}
-
 /// A chain of properties.
 #[derive(Clone)]
 pub struct Properties<'a> {
