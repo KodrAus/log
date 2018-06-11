@@ -289,6 +289,7 @@ mod macros;
 #[cfg(feature = "serde")]
 mod serde_support;
 
+#[cfg(feature = "serde")]
 pub mod properties;
 
 // The LOGGER static holds a pointer to the global logger. It is protected by
@@ -622,7 +623,7 @@ impl LevelFilter {
 #[derive(Clone, Debug)]
 pub struct Record<'a> {
     header: Header<'a>,
-    #[cfg(feature = "erased-serde")]
+    #[cfg(feature = "serde")]
     properties: properties::Properties<'a>,
 }
 
@@ -686,7 +687,7 @@ impl<'a> Record<'a> {
 
     /// Get a new borrowed record with the additional properties.
     #[inline]
-    #[cfg(feature = "erased-serde")]
+    #[cfg(feature = "serde")]
     pub fn push<'b>(&'b self, properties: &'b properties::KeyValues) -> Record<'b> {
         Record {
             header: self.header.clone(),
@@ -698,18 +699,9 @@ impl<'a> Record<'a> {
     /// 
     /// Properties aren't guaranteed to be unique (the same key may be repeated with different values).
     #[inline]
-    #[cfg(feature = "erased-serde")]
+    #[cfg(feature = "serde")]
     pub fn properties(&self) -> Option<&properties::Properties> {
         Some(&self.properties)
-    }
-
-    /// The properties attached to this record.
-    /// 
-    /// Properties aren't guaranteed to be unique (the same key may be repeated with different values).
-    #[inline]
-    #[cfg(not(feature = "erased-serde"))]
-    pub fn properties(&self) -> Option<&properties::Properties> {
-        None
     }
 }
 
@@ -782,7 +774,7 @@ impl<'a> RecordBuilder<'a> {
                     file: None,
                     line: None,
                 },
-                #[cfg(feature = "erased-serde")]
+                #[cfg(feature = "serde")]
                 properties: Default::default()
             },
         }
@@ -839,7 +831,7 @@ impl<'a> RecordBuilder<'a> {
 
     /// Set properties
     #[inline]
-    #[cfg(feature = "erased-serde")]
+    #[cfg(feature = "serde")]
     pub fn properties(&mut self, properties: &'a properties::KeyValues) -> &mut RecordBuilder<'a> {
         self.record.properties = properties::Properties::root(properties);
         self
