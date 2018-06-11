@@ -8,6 +8,18 @@ mod imp {
 
     pub use erased_serde::Serialize as Value;
 
+    /*
+    The properties machinery is made up of a few traits:
+
+    - `Serializer`: for serializing key values, one pair at a time
+    - `KeyValues`: for driving a `Serializer`. Blanket implemented for any iterator over `KeyValue`s
+    - `KeyValue`: a single `String`/`Value` pair. Blanket implemented for any `(AsRef<str>, Serialize)`
+    - `Value`: a type that can be serialized using `serde`
+
+    Don't attempt to support owned/borrowed here. We could use a serde Serializer.
+    Maybe we could add some machinery for getting an owned `Record`?
+    */
+
     /// A serializer for key value pairs.
     pub trait Serializer {
         /// Serialize the key and value.
