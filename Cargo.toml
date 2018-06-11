@@ -36,7 +36,7 @@ release_max_level_info  = []
 release_max_level_debug = []
 release_max_level_trace = []
 
-default = ["std"]
+default = ["serde"]
 
 std = ["serde/std", "erased-serde/std"]
 alloc = ["serde/alloc", "erased-serde/alloc"]

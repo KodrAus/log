@@ -293,6 +293,17 @@ mod serde_support;
 #[macro_use]
 pub mod properties;
 
+fn test_stuff() {
+    use Level::*;
+
+    log!(Warn, msg: { "{}", 1 }, properties: {
+        key = "stuff",
+        user = 32,
+        #[log(debug)]
+        id = 18,
+    });
+}
+
 // The LOGGER static holds a pointer to the global logger. It is protected by
 // the STATE static which determines whether LOGGER has been initialized yet.
 static mut LOGGER: &'static Log = &NopLogger;
@@ -701,8 +712,15 @@ impl<'a> Record<'a> {
     /// Properties aren't guaranteed to be unique (the same key may be repeated with different values).
     #[inline]
     #[cfg(feature = "serde")]
-    pub fn properties(&self) -> Option<&properties::Properties> {
-        Some(&self.properties)
+    pub fn properties(&self) -> &properties::Properties {
+        &self.properties
+    }
+
+    /// The raw key values attached to this record.
+    #[inline]
+    #[cfg(feature = "serde")]
+    pub fn key_values(&self) -> &dyn properties::KeyValues {
+        &self.properties
     }
 }
 
@@ -833,7 +851,7 @@ impl<'a> RecordBuilder<'a> {
     /// Set properties
     #[inline]
     #[cfg(feature = "serde")]
-    pub fn properties(&mut self, properties: &'a dyn properties::KeyValues) -> &mut RecordBuilder<'a> {
+    pub fn key_values(&mut self, properties: &'a dyn properties::KeyValues) -> &mut RecordBuilder<'a> {
         self.record.properties = properties::Properties::root(properties);
         self
     }

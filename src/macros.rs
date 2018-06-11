@@ -31,8 +31,11 @@
 /// ```
 #[macro_export]
 macro_rules! log {
-    (target: $target:expr, $lvl:expr, $($arg:tt)+) => ({
+    (target: $target:expr, $lvl:expr, msg: { $($arg:tt)+ }, properties: { $($prop:tt)* }) => ({
         let lvl = $lvl;
+
+        __properties_internal!(@initial { stream: [$($prop)*], kvs_ident: kvs });
+
         if lvl <= $crate::STATIC_MAX_LEVEL && lvl <= $crate::max_level() {
             $crate::Log::log(
                 $crate::logger(),
@@ -43,11 +46,17 @@ macro_rules! log {
                     .module_path(Some(module_path!()))
                     .file(Some(file!()))
                     .line(Some(line!()))
+                    .key_values(&kvs)
                     .build()
             )
         }
     });
-    ($lvl:expr, $($arg:tt)+) => (log!(target: module_path!(), $lvl, $($arg)+))
+
+    ($lvl:expr, msg: { $($arg:tt)+ }, properties: { $($prop:tt)* }) => (log!(target: module_path!(), $lvl, msg: { $($arg)+ }, properties: { $($prop)* }));
+
+    (target: $target:expr, $lvl:expr, $($arg:tt)+) => (log!(target: $target, $lvl, msg: { $($arg)+ }, properties: {}));
+    
+    ($lvl:expr, $($arg:tt)+) => (log!(target: module_path!(), $lvl, $($arg)+));
 }
 
 /// Logs a message at the error level.

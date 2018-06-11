@@ -6,18 +6,8 @@ pub mod map {
     use super::*;
     
     /// The default property adapter used when no `#[log]` attribute is present.
-    /// 
-    /// If `std` is available, this will use `Serialize`.
-    /// If `std` is not available, this will use `Debug`.
-    pub fn default(v: impl serde::Serialize + Debug) -> impl ToValue {
-        #[cfg(feature = "erased-serde")]
-        {
-            serde(v)
-        }
-        #[cfg(not(feature = "erased-serde"))]
-        {
-            debug(v)
-        }
+    pub fn default(v: impl ToValue) -> impl ToValue {
+        v
     }
 
     /// `#[log(serde)]` Format a property value using its `Serialize` implementation.
@@ -63,12 +53,13 @@ pub mod map_with {
 
     /// `#[log(fmt = expr)]` Format a property value using a specific format.
     pub fn fmt<T>(value: T, adapter: impl Fn(&T, &mut Formatter) -> Result) -> impl ToValue {
+        #[derive(Debug)]
         struct FmtAdapter<T, F> {
             value: T,
             adapter: F,
         }
 
-        impl<T, F> Debug for FmtAdapter<T, F>
+        impl<T, F> Display for FmtAdapter<T, F>
         where
             F: Fn(&T, &mut Formatter) -> Result,
         {
