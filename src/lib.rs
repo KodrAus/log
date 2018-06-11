@@ -290,6 +290,7 @@ mod macros;
 mod serde_support;
 
 #[cfg(feature = "serde")]
+#[macro_use]
 pub mod properties;
 
 // The LOGGER static holds a pointer to the global logger. It is protected by
@@ -688,7 +689,7 @@ impl<'a> Record<'a> {
     /// Get a new borrowed record with the additional properties.
     #[inline]
     #[cfg(feature = "serde")]
-    pub fn push<'b>(&'b self, properties: &'b properties::KeyValues) -> Record<'b> {
+    pub fn push<'b>(&'b self, properties: &'b dyn properties::KeyValues) -> Record<'b> {
         Record {
             header: self.header.clone(),
             properties: properties::Properties::chained(properties, &self.properties)
@@ -832,7 +833,7 @@ impl<'a> RecordBuilder<'a> {
     /// Set properties
     #[inline]
     #[cfg(feature = "serde")]
-    pub fn properties(&mut self, properties: &'a properties::KeyValues) -> &mut RecordBuilder<'a> {
+    pub fn properties(&mut self, properties: &'a dyn properties::KeyValues) -> &mut RecordBuilder<'a> {
         self.record.properties = properties::Properties::root(properties);
         self
     }

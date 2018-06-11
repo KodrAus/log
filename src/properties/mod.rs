@@ -1,5 +1,6 @@
 //! Log record properties.
 
+#[macro_use]
 mod macros;
 mod value;
 
@@ -14,13 +15,13 @@ use serde;
 /// A serializer for key value pairs.
 pub trait Serializer {
     /// Serialize the key and value.
-    fn serialize_kv(&mut self, kv: &KeyValue);
+    fn serialize_kv(&mut self, kv: &dyn KeyValue);
 }
 
 /// A set of key value pairs that can be serialized.
 pub trait KeyValues {
     /// Serialize the key value pairs.
-    fn serialize(&self, serializer: &mut Serializer);
+    fn serialize(&self, serializer: &mut dyn Serializer);
 }
 
 /// A single key value pair.
@@ -63,7 +64,7 @@ where
     &'a T: IntoIterator<Item = KV>,
     KV: KeyValue
 {
-    fn serialize(&self, serializer: &mut Serializer) {
+    fn serialize(&self, serializer: &mut dyn Serializer) {
         for kv in self.into_iter() {
             serializer.serialize_kv(&kv);
         }
@@ -74,11 +75,11 @@ where
 pub struct SerializeMap<T>(T);
 
 impl<T> SerializeMap<T> {
-    pub fn new(inner: T) -> Self {
+    fn new(inner: T) -> Self {
         SerializeMap(inner)
     }
 
-    pub fn into_inner(self) -> T {
+    fn into_inner(self) -> T {
         self.0
     }
 }
@@ -87,7 +88,7 @@ impl<T> Serializer for SerializeMap<T>
     where
         T: serde::ser::SerializeMap
 {
-    fn serialize_kv(&mut self, kv: &KeyValue) {
+    fn serialize_kv(&mut self, kv: &dyn KeyValue) {
         let _ = serde::ser::SerializeMap::serialize_entry(&mut self.0, kv.key(), &kv.value());
     }
 }
@@ -114,11 +115,11 @@ impl<KV> serde::Serialize for SerializeMap<KV>
 pub struct SerializeSeq<T>(T);
 
 impl<T> SerializeSeq<T> {
-    pub fn new(inner: T) -> Self {
+    fn new(inner: T) -> Self {
         SerializeSeq(inner)
     }
 
-    pub fn into_inner(self) -> T {
+    fn into_inner(self) -> T {
         self.0
     }
 }
@@ -127,7 +128,7 @@ impl<T> Serializer for SerializeSeq<T>
     where
         T: serde::ser::SerializeSeq
 {
-    fn serialize_kv(&mut self, kv: &KeyValue) {
+    fn serialize_kv(&mut self, kv: &dyn KeyValue) {
         let _ = serde::ser::SerializeSeq::serialize_element(&mut self.0, &(kv.key(), kv.value()));
     }
 }
@@ -150,37 +151,50 @@ impl<KV> serde::Serialize for SerializeSeq<KV>
     }
 }
 
-#[doc(hidden)]
-pub struct RawKeyValues<'a>(pub &'a [(&'a str, Value<'a>)]);
+struct EmptyKeyValue;
 
-impl<'a> fmt::Debug for RawKeyValues<'a> {
+impl KeyValues for EmptyKeyValue {
+    fn serialize(&self, serializer: &mut dyn Serializer) { }
+}
+
+#[doc(hidden)]
+pub struct RawKeyValue<'a>(pub &'a str, pub &'a dyn ToValue);
+
+impl<'a> fmt::Debug for RawKeyValue<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("RawKeyValues").finish()
+        f.debug_struct("RawKeyValue").finish()
     }
 }
 
-impl<'a> KeyValues for RawKeyValues<'a> {
-    fn serialize(&self, serializer: &mut Serializer) {
-        self.0.serialize(serializer)
+impl<'a> KeyValues for RawKeyValue<'a> {
+    fn serialize(&self, serializer: &mut dyn Serializer) {
+        serializer.serialize_kv(&(self.0, self.1))
     }
 }
 
 /// A chain of properties.
 #[derive(Clone)]
 pub struct Properties<'a> {
-    kvs: &'a KeyValues,
+    kvs: &'a dyn KeyValues,
     parent: Option<&'a Properties<'a>>,
 }
 
 impl<'a> Properties<'a> {
-    pub(crate) fn root(properties: &'a KeyValues) -> Self {
+    pub fn empty() -> Self {
+        Properties {
+            kvs: &EmptyKeyValue,
+            parent: None,
+        }
+    }
+
+    pub fn root(properties: &'a dyn KeyValues) -> Self {
         Properties {
             kvs: properties,
             parent: None
         }
     }
 
-    pub(crate) fn chained(properties: &'a KeyValues, parent: &'a Properties) -> Self {
+    pub fn chained(properties: &'a dyn KeyValues, parent: &'a Properties) -> Self {
         Properties {
             kvs: properties,
             parent: Some(parent)
@@ -197,7 +211,7 @@ impl<'a> Properties<'a> {
 }
 
 impl<'a> KeyValues for Properties<'a> {
-    fn serialize(&self, serializer: &mut Serializer) {
+    fn serialize(&self, serializer: &mut dyn Serializer) {
         self.kvs.serialize(serializer);
 
         if let Some(parent) = self.parent {
@@ -214,9 +228,6 @@ impl<'a> fmt::Debug for Properties<'a> {
 
 impl<'a> Default for Properties<'a> {
     fn default() -> Self {
-        Properties {
-            kvs: &RawKeyValues(&[]),
-            parent: None,
-        }
+        Properties::empty()
     }
 }

@@ -92,3 +92,12 @@ impl<'a> ToValue for Value<'a> {
         Value { inner: self.inner }
     }
 }
+
+impl<'a, T: ?Sized> ToValue for &'a T
+where
+    T: ToValue
+{
+    fn to_value(&self) -> Value {
+        (*self).to_value()
+    }
+}
