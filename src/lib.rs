@@ -293,17 +293,6 @@ mod serde_support;
 #[macro_use]
 pub mod properties;
 
-fn test_stuff() {
-    use Level::*;
-
-    log!(Warn, msg: { "{}", 1 }, properties: {
-        key = "stuff",
-        user = 32,
-        #[log(debug)]
-        id = 18,
-    });
-}
-
 // The LOGGER static holds a pointer to the global logger. It is protected by
 // the STATE static which determines whether LOGGER has been initialized yet.
 static mut LOGGER: &'static Log = &NopLogger;

@@ -1,21 +1,8 @@
 #[macro_export]
-macro_rules! properties(
-    // Do nothing
-    () => {};
-    // Parse tokens between braces
-    ({ $($stream:tt)* }) => {{
-        __properties_internal!(@ initial {
-            stream: [$($stream)*],
-            properties: properties
-        });
-    }};
-);
-
-#[macro_export]
 #[doc(hidden)]
-macro_rules! __properties_internal(
-    (@ initial { stream: [$($stream:tt)*], kvs_ident: $kvs_ident:ident }) => {
-        __properties_internal!(@ expect_adapter {
+macro_rules! properties(
+    ({ stream: [$($stream:tt)*], kvs_ident: $kvs_ident:ident }) => {
+        properties!(@ expect_adapter {
             stream: [$($stream)*],
             tokens: [],
             kvs_ident: $kvs_ident
@@ -38,7 +25,7 @@ macro_rules! __properties_internal(
         tokens: [$($tokens:tt)*],
         kvs_ident: $kvs_ident:ident
     }) => {
-        __properties_internal!(@ expect_value {
+        properties!(@ expect_separator {
             stream: [$($stream)*],
             tokens: [$($tokens)*],
             adapter: {
@@ -54,7 +41,7 @@ macro_rules! __properties_internal(
         tokens: [$($tokens:tt)*],
         kvs_ident: $kvs_ident:ident
     }) => {
-        __properties_internal!(@ expect_key {
+        properties!(@ expect_key {
             stream: [$($stream)*],
             tokens: [$($tokens)*],
             adapter: {
@@ -69,7 +56,7 @@ macro_rules! __properties_internal(
         tokens: [$($tokens:tt)*],
         kvs_ident: $kvs_ident:ident
     }) => {
-        __properties_internal!(@ expect_key {
+        properties!(@ expect_key {
             stream: [$($stream)*],
             tokens: [$($tokens)*],
             adapter: {
@@ -87,7 +74,7 @@ macro_rules! __properties_internal(
         adapter: { $($adapter:tt)* },
         kvs_ident: $kvs_ident:ident
     }) => {
-        __properties_internal!(@ expect_value {
+        properties!(@ expect_separator {
             stream: [$($stream)*],
             tokens: [$($tokens)*],
             adapter: { $($adapter)* },
@@ -96,50 +83,48 @@ macro_rules! __properties_internal(
         });
     };
 
-    // Munch a value and trailing comma from the token stream
-    (@ expect_value {
-        stream: [= $value:expr , $($stream:tt)*],
+    // Munch a `=` from the token stream
+    (@ expect_separator {
+        stream: [= $($stream:tt)*],
         tokens: [$($tokens:tt)*],
         adapter: { $($adapter:tt)* },
         key: $key:ident,
         kvs_ident: $kvs_ident:ident
     }) => {
-        __properties_internal!(@ with_adapter {
+        properties!(@ expect_value {
             stream: [$($stream)*],
             tokens: [$($tokens)*],
             adapter: { $($adapter)* },
             key: $key,
-            value: $value,
             kvs_ident: $kvs_ident
         });
     };
-    // Munch a value from the end of the token stream
-    (@ expect_value {
-        stream: [= $value:expr],
+    // Munch a `:` from the token stream
+    (@ expect_separator {
+        stream: [: $($stream:tt)*],
         tokens: [$($tokens:tt)*],
         adapter: { $($adapter:tt)* },
         key: $key:ident,
         kvs_ident: $kvs_ident:ident
     }) => {
-        __properties_internal!(@ with_adapter {
-            stream: [],
+        properties!(@ expect_value {
+            stream: [$($stream)*],
             tokens: [$($tokens)*],
             adapter: { $($adapter)* },
             key: $key,
-            value: $value,
             kvs_ident: $kvs_ident
         });
     };
     // Munch a trailing comma from the token stream
     // The value is the key identifier as an expression
-    (@ expect_value {
+    (@ expect_separator {
         stream: [, $($stream:tt)*],
         tokens: [$($tokens:tt)*],
         adapter: { $($adapter:tt)* },
         key: $key:ident,
         kvs_ident: $kvs_ident:ident
     }) => {
-        __properties_internal!(@ with_adapter {
+        properties!(@ with_adapter {
             stream: [$($stream)*],
             tokens: [$($tokens)*],
             adapter: { $($adapter)* },
@@ -150,19 +135,54 @@ macro_rules! __properties_internal(
     };
     // We've reached the end of the token stream
     // The value is the key identifier as an expression
-    (@ expect_value {
+    (@ expect_separator {
         stream: [],
         tokens: [$($tokens:tt)*],
         adapter: { $($adapter:tt)* },
         key: $key:ident,
         kvs_ident: $kvs_ident:ident
     }) => {
-        __properties_internal!(@ with_adapter {
+        properties!(@ with_adapter {
             stream: [],
             tokens: [$($tokens)*],
             adapter: { $($adapter)* },
             key: $key,
             value: $key,
+            kvs_ident: $kvs_ident
+        });
+    };
+
+    // Munch a value and trailing comma from the token stream
+    (@ expect_value {
+        stream: [$value:expr , $($stream:tt)*],
+        tokens: [$($tokens:tt)*],
+        adapter: { $($adapter:tt)* },
+        key: $key:ident,
+        kvs_ident: $kvs_ident:ident
+    }) => {
+        properties!(@ with_adapter {
+            stream: [$($stream)*],
+            tokens: [$($tokens)*],
+            adapter: { $($adapter)* },
+            key: $key,
+            value: $value,
+            kvs_ident: $kvs_ident
+        });
+    };
+    // Munch a value from the end of the token stream
+    (@ expect_value {
+        stream: [$value:expr],
+        tokens: [$($tokens:tt)*],
+        adapter: { $($adapter:tt)* },
+        key: $key:ident,
+        kvs_ident: $kvs_ident:ident
+    }) => {
+        properties!(@ with_adapter {
+            stream: [],
+            tokens: [$($tokens)*],
+            adapter: { $($adapter)* },
+            key: $key,
+            value: $value,
             kvs_ident: $kvs_ident
         });
     };
@@ -179,7 +199,7 @@ macro_rules! __properties_internal(
         value: $value:expr,
         kvs_ident: $kvs_ident:ident
     }) => {
-        __properties_internal!(@ with_value {
+        properties!(@ with_value {
             stream: [$($stream)*],
             tokens: [$($tokens)*],
             adapter_fn: $crate::properties::adapter::map::$adapter_kind,
@@ -201,7 +221,7 @@ macro_rules! __properties_internal(
         value: $value:expr,
         kvs_ident: $kvs_ident:ident
     }) => {
-        __properties_internal!(@ with_value {
+        properties!(@ with_value {
             stream: [$($stream)*],
             tokens: [$($tokens)*],
             adapter_fn: |value| {
@@ -227,7 +247,7 @@ macro_rules! __properties_internal(
         let $key = &$value;
         let $key = $adapter_fn($key);
 
-        __properties_internal!(@ expect_adapter {
+        properties!(@ expect_adapter {
             stream: [$($stream)*],
             tokens: [
                 $($tokens)*

@@ -34,7 +34,7 @@ macro_rules! log {
     (target: $target:expr, $lvl:expr, msg: { $($arg:tt)+ }, properties: { $($prop:tt)* }) => ({
         let lvl = $lvl;
 
-        __properties_internal!(@initial { stream: [$($prop)*], kvs_ident: kvs });
+        properties!({ stream: [$($prop)*], kvs_ident: kvs });
 
         if lvl <= $crate::STATIC_MAX_LEVEL && lvl <= $crate::max_level() {
             $crate::Log::log(
