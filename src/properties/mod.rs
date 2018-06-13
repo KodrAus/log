@@ -5,6 +5,11 @@ mod macros;
 
 pub mod adapter;
 
+#[cfg(feature = "std")]
+use std::collections;
+#[cfg(feature = "std")]
+use std::hash;
+
 use std::fmt;
 
 use serde;
@@ -21,6 +26,7 @@ pub trait Serializer {
 pub trait KeyValues {
     /// Serialize the key value pairs.
     fn serialize(&self, serializer: &mut dyn Serializer);
+
 }
 
 /// A single key value pair.
@@ -35,6 +41,55 @@ pub trait KeyValue {
 pub trait ToValue {
     /// Perform the conversion.
     fn to_value(&self) -> Value;
+}
+
+impl<KV> KeyValues for [KV] where KV: KeyValue {
+    fn serialize(&self, serializer: &mut dyn Serializer) {
+        for kv in self {
+            serializer.serialize_kv(&kv);
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl<KV> KeyValues for Vec<KV> where KV: KeyValue {
+    fn serialize(&self, serializer: &mut dyn Serializer) {
+        self.as_slice().serialize(serializer)
+    }
+}
+
+#[cfg(feature = "std")]
+impl<K, V> KeyValues for collections::BTreeMap<K, V>
+where
+    for<'a> (&'a K, &'a V): KeyValue,
+{
+    fn serialize(&self, serializer: &mut dyn Serializer) {
+        for kv in self {
+            serializer.serialize_kv(&kv);
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl<K, V> KeyValues for collections::HashMap<K, V>
+where
+    for<'a> (&'a K, &'a V): KeyValue,
+    K: Eq + hash::Hash,
+{
+    fn serialize(&self, serializer: &mut dyn Serializer) {
+        for kv in self {
+            serializer.serialize_kv(&kv);
+        }
+    }
+}
+
+impl<'a, T: ?Sized> KeyValues for &'a T
+where
+    T: KeyValues
+{
+    fn serialize(&self, serializer: &mut dyn Serializer) {
+        (*self).serialize(serializer)
+    }
 }
 
 impl<K, V> KeyValue for (K, V)
@@ -61,18 +116,6 @@ where
 
     fn value(&self) -> Value {
         (*self).value()
-    }
-}
-
-impl<'a, T: ?Sized, KV> KeyValues for &'a T
-where
-    &'a T: IntoIterator<Item = KV>,
-    KV: KeyValue
-{
-    fn serialize(&self, serializer: &mut dyn Serializer) {
-        for kv in self.into_iter() {
-            serializer.serialize_kv(&kv);
-        }
     }
 }
 
@@ -162,100 +205,6 @@ impl<'a> fmt::Debug for Value<'a> {
     }
 }
 
-/// A `serde` adapter to serialize key values as entries in a map.
-/// 
-/// If this type wraps a `serde` serializer then it can be used as a serializer
-/// for key value pairs.
-/// 
-/// If this type wraps a set of key value pairs then it can be serialized itself
-/// using `serde`.
-#[derive(Debug)]
-pub struct SerializeMap<T>(T);
-
-impl<T> SerializeMap<T> {
-    pub fn new(inner: T) -> Self {
-        SerializeMap(inner)
-    }
-
-    pub fn into_inner(self) -> T {
-        self.0
-    }
-}
-
-impl<T> Serializer for SerializeMap<T>
-    where
-        T: serde::ser::SerializeMap
-{
-    fn serialize_kv(&mut self, kv: &dyn KeyValue) {
-        let _ = serde::ser::SerializeMap::serialize_entry(&mut self.0, kv.key(), &kv.value());
-    }
-}
-
-impl<KV> serde::Serialize for SerializeMap<KV>
-    where
-        KV: KeyValues,
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer
-    {
-        use serde::ser::SerializeMap as SerializeTrait;
-
-        let mut map = SerializeMap::new(serializer.serialize_map(None)?);
-
-        KeyValues::serialize(&self.0, &mut map);
-
-        map.into_inner().end()
-    }
-}
-
-/// A `serde` adapter to serialize key values as tuple elements in a sequence.
-/// 
-/// If this type wraps a `serde` serializer then it can be used as a serializer
-/// for key value pairs.
-/// 
-/// If this type wraps a set of key value pairs then it can be serialized itself
-/// using `serde`.
-#[derive(Debug)]
-pub struct SerializeSeq<T>(T);
-
-impl<T> SerializeSeq<T> {
-    pub fn new(inner: T) -> Self {
-        SerializeSeq(inner)
-    }
-
-    pub fn into_inner(self) -> T {
-        self.0
-    }
-}
-
-impl<T> Serializer for SerializeSeq<T>
-    where
-        T: serde::ser::SerializeSeq
-{
-    fn serialize_kv(&mut self, kv: &dyn KeyValue) {
-        let _ = serde::ser::SerializeSeq::serialize_element(&mut self.0, &(kv.key(), kv.value()));
-    }
-}
-
-impl<KV> serde::Serialize for SerializeSeq<KV>
-    where
-        KV: KeyValues,
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer
-    {
-        use serde::ser::SerializeSeq as SerializeTrait;
-
-        let mut seq = SerializeSeq::new(serializer.serialize_seq(None)?);
-
-        KeyValues::serialize(&self.0, &mut seq);
-
-        seq.into_inner().end()
-    }
-}
-
 pub(crate) struct EmptyKeyValues;
 
 impl KeyValues for EmptyKeyValues {
@@ -277,54 +226,40 @@ impl<'a> KeyValues for RawKeyValues<'a> {
     }
 }
 
-/// A chain of properties.
+/// A chain of key value pairs.
 #[derive(Clone)]
-pub struct Properties<'a> {
+pub(crate) struct Chained<'a> {
     kvs: &'a dyn KeyValues,
-    parent: Option<&'a Properties<'a>>,
+    parent: Option<&'a Chained<'a>>,
 }
 
-impl<'a> Properties<'a> {
+impl<'a> Chained<'a> {
     /// Create a new set of properties with no key value pairs.
-    pub(crate) fn empty() -> Self {
-        Properties {
+    pub fn empty() -> Self {
+        Chained {
             kvs: &EmptyKeyValues,
             parent: None,
         }
     }
 
     /// Create a new set of properties with the given initial key value pairs.
-    pub(crate) fn root(properties: &'a dyn KeyValues) -> Self {
-        Properties {
+    pub fn root(properties: &'a dyn KeyValues) -> Self {
+        Chained {
             kvs: properties,
             parent: None
         }
     }
 
     /// Create a new set of properties with a parent and additional key value pairs.
-    pub(crate) fn chained(properties: &'a dyn KeyValues, parent: &'a Properties) -> Self {
-        Properties {
+    pub fn chained(properties: &'a dyn KeyValues, parent: &'a Chained) -> Self {
+        Chained {
             kvs: properties,
             parent: Some(parent)
         }
     }
-
-    /// Get a wrapper over these properties that can be serialized using `serde`.
-    /// 
-    /// The properties will be serialized as a flat map of key value entries.
-    pub fn serialize_map(&self) -> SerializeMap<&Self> {
-        SerializeMap::new(&self)
-    }
-
-    /// Get a wrapper over these properties that can be serialized using `serde`.
-    /// 
-    /// The properties will be serialized as a flat sequence of key value tuples.
-    pub fn serialize_seq(&self) -> SerializeSeq<&Self> {
-        SerializeSeq::new(&self)
-    }
 }
 
-impl<'a> KeyValues for Properties<'a> {
+impl<'a> KeyValues for Chained<'a> {
     fn serialize(&self, serializer: &mut dyn Serializer) {
         self.kvs.serialize(serializer);
 
@@ -334,14 +269,142 @@ impl<'a> KeyValues for Properties<'a> {
     }
 }
 
+impl<'a> fmt::Debug for Chained<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Chained").finish()
+    }
+}
+
+impl<'a> Default for Chained<'a> {
+    fn default() -> Self {
+        Chained::empty()
+    }
+}
+
+/// A set of key value pairs associated with a log record.
+pub struct Properties<'a> {
+    kvs: &'a dyn KeyValues,
+}
+
+impl<'a> Properties<'a> {
+    pub(crate) fn new(kvs: &'a dyn KeyValues) -> Self {
+        Properties {
+            kvs,
+        }
+    }
+
+    /// Get the raw key values.
+    pub fn key_values(&self) -> &dyn KeyValues {
+        &self.kvs
+    }
+
+    /// Get a wrapper over these properties that can be serialized using `serde`.
+    /// 
+    /// The properties will be serialized as a flat map of key value entries.
+    pub fn as_map(&self) -> Map {
+        Map(&self.kvs)
+    }
+
+    /// Get a wrapper over these properties that can be serialized using `serde`.
+    /// 
+    /// The properties will be serialized as a flat sequence of key value tuples.
+    pub fn as_seq(&self) -> Seq {
+        Seq(&self.kvs)
+    }
+
+    /// Count the number of key value pairs.
+    pub fn count(&self) -> usize {
+        struct Counter(usize);
+
+        impl Serializer for Counter {
+            fn serialize_kv(&mut self, kv: &dyn KeyValue) {
+                self.0 += 1;
+            }
+        }
+
+        let mut counter = Counter(0);
+        self.kvs.serialize(&mut counter);
+
+        counter.0
+    }
+}
+
 impl<'a> fmt::Debug for Properties<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Properties").finish()
     }
 }
 
-impl<'a> Default for Properties<'a> {
-    fn default() -> Self {
-        Properties::empty()
+/// A `serde` adapter to serialize key values as entries in a map.
+/// 
+/// If this type wraps a `serde` serializer then it can be used as a serializer
+/// for key value pairs.
+/// 
+/// If this type wraps a set of key value pairs then it can be serialized itself
+/// using `serde`.
+pub struct Map<'a>(&'a dyn KeyValues);
+
+impl<'a> serde::Serialize for Map<'a> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer
+    {
+        use serde::ser::SerializeMap;
+
+        struct SerdeSerializer<M>(M);
+        impl<M> Serializer for SerdeSerializer<M> where M: SerializeMap {
+            fn serialize_kv(&mut self, kv: &dyn KeyValue) {
+                let _ = SerializeMap::serialize_entry(&mut self.0, kv.key(), &kv.value());
+            }
+        }
+
+        let mut map = SerdeSerializer(serializer.serialize_map(None)?);
+
+        KeyValues::serialize(&self.0, &mut map);
+
+        map.0.end()
+    }
+}
+
+impl<'a> fmt::Debug for Map<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Map").finish()
+    }
+}
+
+/// A `serde` adapter to serialize key values as tuple elements in a sequence.
+/// 
+/// If this type wraps a `serde` serializer then it can be used as a serializer
+/// for key value pairs.
+/// 
+/// If this type wraps a set of key value pairs then it can be serialized itself
+/// using `serde`.
+pub struct Seq<'a>(&'a dyn KeyValues);
+
+impl<'a> serde::Serialize for Seq<'a> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer
+    {
+        use serde::ser::SerializeSeq;
+
+        struct SerdeSerializer<M>(M);
+        impl<S> Serializer for SerdeSerializer<S> where S: SerializeSeq {
+            fn serialize_kv(&mut self, kv: &dyn KeyValue) {
+                let _ = SerializeSeq::serialize_element(&mut self.0, &(kv.key(), kv.value()));
+            }
+        }
+
+        let mut seq = SerdeSerializer(serializer.serialize_seq(None)?);
+
+        KeyValues::serialize(&self.0, &mut seq);
+
+        seq.0.end()
+    }
+}
+
+impl<'a> fmt::Debug for Seq<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Seq").finish()
     }
 }

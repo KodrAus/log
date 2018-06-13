@@ -1,6 +1,10 @@
 pub mod map {
     use serde;
     use std::fmt::{Debug, Display};
+    #[cfg(any(feature = "alloc", feature = "std"))]
+    use std::fmt;
+    #[cfg(any(feature = "alloc", feature = "std"))]
+    use std::path::Path;
 
     use properties::{Value, ToValue};
     use super::*;
@@ -42,6 +46,43 @@ pub mod map {
     /// The property value will be serialized as a string.
     pub fn display(v: impl Display) -> impl ToValue {
         map_with::fmt(v, Display::fmt)
+    }
+
+    /// `#[log(path)]` Format a property value as a path.
+    /// 
+    /// If the path contains invalid UTF8 characters then they will be escaped.
+    #[cfg(any(feature = "alloc", feature = "std"))]
+    pub fn path(v: impl AsRef<Path>) -> impl ToValue {
+        #[derive(Debug)]
+        struct PathAdapter<T>(T);
+
+        impl<T> Display for PathAdapter<T>
+        where
+            T: AsRef<Path>,
+        {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                let path = self.0.as_ref();
+
+                match path.to_str() {
+                    Some(path) => Display::fmt(path, f),
+                    None => Debug::fmt(path, f),
+                }
+            }
+        }
+
+        impl<T> serde::Serialize for PathAdapter<T>
+        where
+            T: AsRef<Path>,
+        {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer
+            {
+                serializer.collect_str(&self)
+            }
+        }
+
+        PathAdapter(v)
     }
 }
 

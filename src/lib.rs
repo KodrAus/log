@@ -625,7 +625,7 @@ impl LevelFilter {
 pub struct Record<'a> {
     header: Header<'a>,
     #[cfg(feature = "serde")]
-    properties: properties::Properties<'a>,
+    kvs: properties::Chained<'a>,
 }
 
 #[derive(Clone, Debug)]
@@ -689,10 +689,10 @@ impl<'a> Record<'a> {
     /// Get a new borrowed record with the additional properties.
     #[inline]
     #[cfg(feature = "serde")]
-    pub fn push<'b>(&'b self, properties: &'b dyn properties::KeyValues) -> Record<'b> {
+    pub fn push_key_values<'b>(&'b self, kvs: &'b dyn properties::KeyValues) -> Record<'b> {
         Record {
             header: self.header.clone(),
-            properties: properties::Properties::chained(properties, &self.properties)
+            kvs: properties::Chained::chained(kvs, &self.kvs)
         }
     }
 
@@ -701,15 +701,8 @@ impl<'a> Record<'a> {
     /// Properties aren't guaranteed to be unique (the same key may be repeated with different values).
     #[inline]
     #[cfg(feature = "serde")]
-    pub fn properties(&self) -> &properties::Properties {
-        &self.properties
-    }
-
-    /// The raw key values attached to this record.
-    #[inline]
-    #[cfg(feature = "serde")]
-    pub fn key_values(&self) -> &dyn properties::KeyValues {
-        &self.properties
+    pub fn properties(&self) -> properties::Properties {
+        properties::Properties::new(&self.kvs)
     }
 }
 
@@ -783,7 +776,7 @@ impl<'a> RecordBuilder<'a> {
                     line: None,
                 },
                 #[cfg(feature = "serde")]
-                properties: Default::default()
+                kvs: Default::default()
             },
         }
     }
@@ -841,7 +834,7 @@ impl<'a> RecordBuilder<'a> {
     #[inline]
     #[cfg(feature = "serde")]
     pub fn key_values(&mut self, properties: &'a dyn properties::KeyValues) -> &mut RecordBuilder<'a> {
-        self.record.properties = properties::Properties::root(properties);
+        self.record.kvs = properties::Chained::root(properties);
         self
     }
 
