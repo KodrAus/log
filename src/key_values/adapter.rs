@@ -6,7 +6,7 @@ pub mod map {
     #[cfg(any(feature = "alloc", feature = "std"))]
     use std::path::Path;
 
-    use properties::{Value, ToValue};
+    use key_values::{Value, ToValue};
     use super::*;
     
     /// The default property adapter used when no `#[log]` attribute is present.
@@ -89,7 +89,7 @@ pub mod map {
 pub mod map_with {
     use std::fmt::{Debug, Display, Formatter, Result};
 
-    use properties::{Value, ToValue};
+    use key_values::{Value, ToValue};
     use super::*;
 
     /// `#[log(fmt = expr)]` Format a property value using a specific format.

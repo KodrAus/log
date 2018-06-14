@@ -16,17 +16,32 @@ use serde;
 #[cfg(feature = "erased-serde")]
 use erased_serde;
 
-/// A serializer for key value pairs.
-pub trait Serializer {
-    /// Serialize the key and value.
-    fn serialize_kv(&mut self, kv: &dyn KeyValue);
+/// A visitor for key value pairs.
+pub trait Visitor {
+    /// Visit the key and value.
+    fn visit_kv(&mut self, kv: &dyn KeyValue);
 }
 
 /// A set of key value pairs that can be serialized.
 pub trait KeyValues {
     /// Serialize the key value pairs.
-    fn serialize(&self, serializer: &mut dyn Serializer);
+    fn visit(&self, visitor: &mut dyn Visitor);
 
+    /// Count the number of key value pairs.
+    fn count(&self) -> usize {
+        struct Counter(usize);
+
+        impl Visitor for Counter {
+            fn visit_kv(&mut self, kv: &dyn KeyValue) {
+                self.0 += 1;
+            }
+        }
+
+        let mut counter = Counter(0);
+        self.visit(&mut counter);
+
+        counter.0
+    }
 }
 
 /// A single key value pair.
@@ -44,17 +59,17 @@ pub trait ToValue {
 }
 
 impl<KV> KeyValues for [KV] where KV: KeyValue {
-    fn serialize(&self, serializer: &mut dyn Serializer) {
+    fn visit(&self, visitor: &mut dyn Visitor) {
         for kv in self {
-            serializer.serialize_kv(&kv);
+            visitor.visit_kv(&kv);
         }
     }
 }
 
 #[cfg(feature = "std")]
 impl<KV> KeyValues for Vec<KV> where KV: KeyValue {
-    fn serialize(&self, serializer: &mut dyn Serializer) {
-        self.as_slice().serialize(serializer)
+    fn visit(&self, visitor: &mut dyn Visitor) {
+        self.as_slice().visit(visitor)
     }
 }
 
@@ -63,9 +78,9 @@ impl<K, V> KeyValues for collections::BTreeMap<K, V>
 where
     for<'a> (&'a K, &'a V): KeyValue,
 {
-    fn serialize(&self, serializer: &mut dyn Serializer) {
+    fn visit(&self, visitor: &mut dyn Visitor) {
         for kv in self {
-            serializer.serialize_kv(&kv);
+            visitor.visit_kv(&kv);
         }
     }
 }
@@ -76,9 +91,9 @@ where
     for<'a> (&'a K, &'a V): KeyValue,
     K: Eq + hash::Hash,
 {
-    fn serialize(&self, serializer: &mut dyn Serializer) {
+    fn visit(&self, visitor: &mut dyn Visitor) {
         for kv in self {
-            serializer.serialize_kv(&kv);
+            visitor.visit_kv(&kv);
         }
     }
 }
@@ -87,8 +102,8 @@ impl<'a, T: ?Sized> KeyValues for &'a T
 where
     T: KeyValues
 {
-    fn serialize(&self, serializer: &mut dyn Serializer) {
-        (*self).serialize(serializer)
+    fn visit(&self, visitor: &mut dyn Visitor) {
+        (*self).visit(visitor)
     }
 }
 
@@ -208,7 +223,7 @@ impl<'a> fmt::Debug for Value<'a> {
 pub(crate) struct EmptyKeyValues;
 
 impl KeyValues for EmptyKeyValues {
-    fn serialize(&self, serializer: &mut dyn Serializer) { }
+    fn visit(&self, visitor: &mut dyn Visitor) { }
 }
 
 #[doc(hidden)]
@@ -221,8 +236,8 @@ impl<'a> fmt::Debug for RawKeyValues<'a> {
 }
 
 impl<'a> KeyValues for RawKeyValues<'a> {
-    fn serialize(&self, serializer: &mut dyn Serializer) {
-        self.0.serialize(serializer)
+    fn visit(&self, visitor: &mut dyn Visitor) {
+        self.0.visit(visitor)
     }
 }
 
@@ -260,11 +275,11 @@ impl<'a> Chained<'a> {
 }
 
 impl<'a> KeyValues for Chained<'a> {
-    fn serialize(&self, serializer: &mut dyn Serializer) {
-        self.kvs.serialize(serializer);
+    fn visit(&self, visitor: &mut dyn Visitor) {
+        self.kvs.visit(visitor);
 
         if let Some(parent) = self.parent {
-            parent.serialize(serializer);
+            parent.visit(visitor);
         }
     }
 }
@@ -281,57 +296,14 @@ impl<'a> Default for Chained<'a> {
     }
 }
 
-/// A set of key value pairs associated with a log record.
-pub struct Properties<'a> {
-    kvs: &'a dyn KeyValues,
+/// Serialize key values as a map.
+pub trait AsMap {
+    fn as_map(&self) -> Map;
 }
 
-impl<'a> Properties<'a> {
-    pub(crate) fn new(kvs: &'a dyn KeyValues) -> Self {
-        Properties {
-            kvs,
-        }
-    }
-
-    /// Get the raw key values.
-    pub fn key_values(&self) -> &dyn KeyValues {
-        &self.kvs
-    }
-
-    /// Get a wrapper over these properties that can be serialized using `serde`.
-    /// 
-    /// The properties will be serialized as a flat map of key value entries.
-    pub fn as_map(&self) -> Map {
-        Map(&self.kvs)
-    }
-
-    /// Get a wrapper over these properties that can be serialized using `serde`.
-    /// 
-    /// The properties will be serialized as a flat sequence of key value tuples.
-    pub fn as_seq(&self) -> Seq {
-        Seq(&self.kvs)
-    }
-
-    /// Count the number of key value pairs.
-    pub fn count(&self) -> usize {
-        struct Counter(usize);
-
-        impl Serializer for Counter {
-            fn serialize_kv(&mut self, kv: &dyn KeyValue) {
-                self.0 += 1;
-            }
-        }
-
-        let mut counter = Counter(0);
-        self.kvs.serialize(&mut counter);
-
-        counter.0
-    }
-}
-
-impl<'a> fmt::Debug for Properties<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Properties").finish()
+impl<'a> AsMap for &'a dyn KeyValues {
+    fn as_map(&self) -> Map {
+        Map::new(self)
     }
 }
 
@@ -344,6 +316,12 @@ impl<'a> fmt::Debug for Properties<'a> {
 /// using `serde`.
 pub struct Map<'a>(&'a dyn KeyValues);
 
+impl<'a> Map<'a> {
+    pub fn new(kvs: &'a impl KeyValues) -> Self {
+        Map(kvs)
+    }
+}
+
 impl<'a> serde::Serialize for Map<'a> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
@@ -351,16 +329,16 @@ impl<'a> serde::Serialize for Map<'a> {
     {
         use serde::ser::SerializeMap;
 
-        struct SerdeSerializer<M>(M);
-        impl<M> Serializer for SerdeSerializer<M> where M: SerializeMap {
-            fn serialize_kv(&mut self, kv: &dyn KeyValue) {
+        struct SerdeVisitor<M>(M);
+        impl<M> Visitor for SerdeVisitor<M> where M: SerializeMap {
+            fn visit_kv(&mut self, kv: &dyn KeyValue) {
                 let _ = SerializeMap::serialize_entry(&mut self.0, kv.key(), &kv.value());
             }
         }
 
-        let mut map = SerdeSerializer(serializer.serialize_map(None)?);
+        let mut map = SerdeVisitor(serializer.serialize_map(None)?);
 
-        KeyValues::serialize(&self.0, &mut map);
+        KeyValues::visit(&self.0, &mut map);
 
         map.0.end()
     }
@@ -369,6 +347,17 @@ impl<'a> serde::Serialize for Map<'a> {
 impl<'a> fmt::Debug for Map<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Map").finish()
+    }
+}
+
+/// Serialize key values as a sequence.
+pub trait AsSeq {
+    fn as_seq(&self) -> Seq;
+}
+
+impl<'a> AsSeq for &'a dyn KeyValues {
+    fn as_seq(&self) -> Seq {
+        Seq::new(self)
     }
 }
 
@@ -381,6 +370,12 @@ impl<'a> fmt::Debug for Map<'a> {
 /// using `serde`.
 pub struct Seq<'a>(&'a dyn KeyValues);
 
+impl<'a> Seq<'a> {
+    pub fn new(kvs: &'a impl KeyValues) -> Self {
+        Seq(kvs)
+    }
+}
+
 impl<'a> serde::Serialize for Seq<'a> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
@@ -388,16 +383,16 @@ impl<'a> serde::Serialize for Seq<'a> {
     {
         use serde::ser::SerializeSeq;
 
-        struct SerdeSerializer<M>(M);
-        impl<S> Serializer for SerdeSerializer<S> where S: SerializeSeq {
-            fn serialize_kv(&mut self, kv: &dyn KeyValue) {
+        struct SerdeVisitor<M>(M);
+        impl<S> Visitor for SerdeVisitor<S> where S: SerializeSeq {
+            fn visit_kv(&mut self, kv: &dyn KeyValue) {
                 let _ = SerializeSeq::serialize_element(&mut self.0, &(kv.key(), kv.value()));
             }
         }
 
-        let mut seq = SerdeSerializer(serializer.serialize_seq(None)?);
+        let mut seq = SerdeVisitor(serializer.serialize_seq(None)?);
 
-        KeyValues::serialize(&self.0, &mut seq);
+        KeyValues::visit(&self.0, &mut seq);
 
         seq.0.end()
     }
@@ -406,5 +401,24 @@ impl<'a> serde::Serialize for Seq<'a> {
 impl<'a> fmt::Debug for Seq<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Seq").finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    extern crate serde_test;
+    use self::serde_test::{assert_de_tokens, assert_de_tokens_error, assert_tokens, Token};
+
+    use super::*;
+    
+    struct CheckKeyValues<F>(F);
+
+    impl<F> Serializer for CheckKeyValues<F>
+    where
+        F: FnMut(&str, Value),
+    {
+        fn visit_kv(&mut self, kv: &dyn KeyValue) {
+            self.0(kv.key(), kv.value());
+        }
     }
 }

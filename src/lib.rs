@@ -53,9 +53,9 @@
 //! extern crate log;
 //!
 //! # #[derive(Debug)] pub struct Yak(String);
-//! # impl Yak { fn shave(&self, _: u32) {} }
+//! # impl Yak { fn shave(&mut self, _: u32) {} }
 //! # fn find_a_razor() -> Result<u32, u32> { Ok(1) }
-//! pub fn shave_the_yak(yak: &Yak) {
+//! pub fn shave_the_yak(yak: &mut Yak) {
 //!     info!(target: "yak_events", "Commencing yak shaving for {:?}", yak);
 //!
 //!     loop {
@@ -227,6 +227,19 @@
 //! [dependencies]
 //! log = { version = "0.4", features = ["max_level_debug", "release_max_level_warn"] }
 //! ```
+//! # Crate Feature Flags
+//!
+//! The following crate feature flags are avaliable in addition to the filters. They are
+//! configured in your `Cargo.toml`.
+//!
+//! * `std` allows use of `std` crate instead of the default `core`. Enables using `std::error` and
+//! `set_boxed_logger` functionality.
+//! * `serde` enables support for serialization and deserialization of `Level` and `LevelFilter`.
+//!
+//! ```toml
+//! [dependencies]
+//! log = { version = "0.4", features = ["std", "serde"] }
+//! ```
 //!
 //! # Version compatibility
 //!
@@ -253,9 +266,11 @@
 //! [log4rs]: https://docs.rs/log4rs/*/log4rs/
 //! [fern]: https://docs.rs/fern/*/fern/
 
-#![doc(html_logo_url = "https://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
-       html_favicon_url = "https://www.rust-lang.org/favicon.ico",
-       html_root_url = "https://docs.rs/log/0.4.1")]
+#![doc(
+    html_logo_url = "https://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
+    html_favicon_url = "https://www.rust-lang.org/favicon.ico",
+    html_root_url = "https://docs.rs/log/0.4"
+)]
 #![warn(missing_docs)]
 #![deny(missing_debug_implementations)]
 #![cfg_attr(not(feature = "std"), no_std)]
@@ -291,7 +306,7 @@ mod serde_support;
 
 #[cfg(feature = "serde")]
 #[macro_use]
-pub mod properties;
+pub mod key_values;
 
 // The LOGGER static holds a pointer to the global logger. It is protected by
 // the STATE static which determines whether LOGGER has been initialized yet.
@@ -309,10 +324,10 @@ static MAX_LOG_LEVEL_FILTER: AtomicUsize = ATOMIC_USIZE_INIT;
 
 static LOG_LEVEL_NAMES: [&'static str; 6] = ["OFF", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"];
 
-static SET_LOGGER_ERROR: &'static str = "attempted to set a logger after the logging system was \
-                                         already initialized";
-static LEVEL_PARSE_ERROR: &'static str = "attempted to convert a string that doesn't match an \
-                                          existing log level";
+static SET_LOGGER_ERROR: &'static str = "attempted to set a logger after the logging system \
+                                         was already initialized";
+static LEVEL_PARSE_ERROR: &'static str =
+    "attempted to convert a string that doesn't match an existing log level";
 
 /// An enum representing the available verbosity levels of the logger.
 ///
@@ -371,12 +386,52 @@ impl PartialOrd for Level {
     fn partial_cmp(&self, other: &Level) -> Option<cmp::Ordering> {
         Some(self.cmp(other))
     }
+
+    #[inline]
+    fn lt(&self, other: &Level) -> bool {
+        (*self as usize) < *other as usize
+    }
+
+    #[inline]
+    fn le(&self, other: &Level) -> bool {
+        *self as usize <= *other as usize
+    }
+
+    #[inline]
+    fn gt(&self, other: &Level) -> bool {
+        *self as usize > *other as usize
+    }
+
+    #[inline]
+    fn ge(&self, other: &Level) -> bool {
+        *self as usize >= *other as usize
+    }
 }
 
 impl PartialOrd<LevelFilter> for Level {
     #[inline]
     fn partial_cmp(&self, other: &LevelFilter) -> Option<cmp::Ordering> {
         Some((*self as usize).cmp(&(*other as usize)))
+    }
+
+    #[inline]
+    fn lt(&self, other: &LevelFilter) -> bool {
+        (*self as usize) < *other as usize
+    }
+
+    #[inline]
+    fn le(&self, other: &LevelFilter) -> bool {
+        *self as usize <= *other as usize
+    }
+
+    #[inline]
+    fn gt(&self, other: &LevelFilter) -> bool {
+        *self as usize > *other as usize
+    }
+
+    #[inline]
+    fn ge(&self, other: &LevelFilter) -> bool {
+        *self as usize >= *other as usize
     }
 }
 
@@ -513,12 +568,52 @@ impl PartialOrd for LevelFilter {
     fn partial_cmp(&self, other: &LevelFilter) -> Option<cmp::Ordering> {
         Some(self.cmp(other))
     }
+
+    #[inline]
+    fn lt(&self, other: &LevelFilter) -> bool {
+        (*self as usize) < *other as usize
+    }
+
+    #[inline]
+    fn le(&self, other: &LevelFilter) -> bool {
+        *self as usize <= *other as usize
+    }
+
+    #[inline]
+    fn gt(&self, other: &LevelFilter) -> bool {
+        *self as usize > *other as usize
+    }
+
+    #[inline]
+    fn ge(&self, other: &LevelFilter) -> bool {
+        *self as usize >= *other as usize
+    }
 }
 
 impl PartialOrd<Level> for LevelFilter {
     #[inline]
     fn partial_cmp(&self, other: &Level) -> Option<cmp::Ordering> {
-        other.partial_cmp(self).map(|x| x.reverse())
+        Some((*self as usize).cmp(&(*other as usize)))
+    }
+
+    #[inline]
+    fn lt(&self, other: &Level) -> bool {
+        (*self as usize) < *other as usize
+    }
+
+    #[inline]
+    fn le(&self, other: &Level) -> bool {
+        *self as usize <= *other as usize
+    }
+
+    #[inline]
+    fn gt(&self, other: &Level) -> bool {
+        *self as usize > *other as usize
+    }
+
+    #[inline]
+    fn ge(&self, other: &Level) -> bool {
+        *self as usize >= *other as usize
     }
 }
 
@@ -625,7 +720,7 @@ impl LevelFilter {
 pub struct Record<'a> {
     header: Header<'a>,
     #[cfg(feature = "serde")]
-    kvs: properties::Chained<'a>,
+    kvs: key_values::Chained<'a>,
 }
 
 #[derive(Clone, Debug)]
@@ -686,23 +781,23 @@ impl<'a> Record<'a> {
         self.header.line
     }
 
-    /// Get a new borrowed record with the additional properties.
+    /// Get a new borrowed record with the additional key values.
     #[inline]
     #[cfg(feature = "serde")]
-    pub fn push_key_values<'b>(&'b self, kvs: &'b dyn properties::KeyValues) -> Record<'b> {
+    pub fn push_key_values<'b>(&'b self, kvs: &'b dyn key_values::KeyValues) -> Record<'b> {
         Record {
             header: self.header.clone(),
-            kvs: properties::Chained::chained(kvs, &self.kvs)
+            kvs: key_values::Chained::chained(kvs, &self.kvs)
         }
     }
 
-    /// The properties attached to this record.
+    /// The key value pairs attached to this record.
     /// 
-    /// Properties aren't guaranteed to be unique (the same key may be repeated with different values).
+    /// Pairs aren't guaranteed to be unique (the same key may be repeated with different values).
     #[inline]
     #[cfg(feature = "serde")]
-    pub fn properties(&self) -> properties::Properties {
-        properties::Properties::new(&self.kvs)
+    pub fn key_values(&self) -> &dyn key_values::KeyValues {
+        &self.kvs
     }
 }
 
@@ -830,11 +925,11 @@ impl<'a> RecordBuilder<'a> {
         self
     }
 
-    /// Set properties
+    /// Set key values
     #[inline]
     #[cfg(feature = "serde")]
-    pub fn key_values(&mut self, properties: &'a dyn properties::KeyValues) -> &mut RecordBuilder<'a> {
-        self.record.kvs = properties::Chained::root(properties);
+    pub fn key_values(&mut self, kvs: &'a dyn key_values::KeyValues) -> &mut RecordBuilder<'a> {
+        self.record.kvs = key_values::Chained::root(kvs);
         self
     }
 
@@ -1170,6 +1265,33 @@ pub fn logger() -> &'static Log {
     }
 }
 
+// WARNING: this is not part of the crate's public API and is subject to change at any time
+#[doc(hidden)]
+pub fn __private_api_log(
+    args: fmt::Arguments,
+    level: Level,
+    &(target, module_path, file, line): &(&str, &str, &str, u32),
+    kvs: &key_values::KeyValues
+) {
+    logger().log(
+        &Record::builder()
+            .args(args)
+            .level(level)
+            .target(target)
+            .module_path(Some(module_path))
+            .file(Some(file))
+            .line(Some(line))
+            .key_values(kvs)
+            .build(),
+    );
+}
+
+// WARNING: this is not part of the crate's public API and is subject to change at any time
+#[doc(hidden)]
+pub fn __private_api_enabled(level: Level, target: &str) -> bool {
+    logger().enabled(&Metadata::builder().level(level).target(target).build())
+}
+
 /// The statically resolved maximum log level.
 ///
 /// See the crate level documentation for information on how to configure this.
@@ -1212,9 +1334,8 @@ cfg_if! {
 #[cfg(test)]
 mod tests {
     extern crate std;
-    use tests::std::string::ToString;
     use super::{Level, LevelFilter, ParseLevelError};
-    use erased_serde::Serialize;
+    use tests::std::string::ToString;
 
     #[test]
     fn test_levelfilter_from_str() {
@@ -1301,8 +1422,8 @@ mod tests {
     #[test]
     #[cfg(feature = "std")]
     fn test_error_trait() {
-        use std::error::Error;
         use super::SetLoggerError;
+        use std::error::Error;
         let e = SetLoggerError(());
         assert_eq!(
             e.description(),
@@ -1338,7 +1459,7 @@ mod tests {
     #[test]
     fn test_record_builder() {
         use super::{MetadataBuilder, RecordBuilder};
-        use properties::RawKeyValues;
+        use key_values::RawKeyValues;
         let target = "myApp";
         let metadata = MetadataBuilder::new().target(target).build();
         let fmt_args = format_args!("hello");
@@ -1348,12 +1469,13 @@ mod tests {
             .module_path(Some("foo"))
             .file(Some("bar"))
             .line(Some(30))
-            .properties(&RawKeyValues(&[("a", &"foo"), ("b", &1)]))
+            .key_values(&RawKeyValues(&[("a", &"foo"), ("b", &1)]))
             .build();
         assert_eq!(record_test.metadata().target(), "myApp");
         assert_eq!(record_test.module_path(), Some("foo"));
         assert_eq!(record_test.file(), Some("bar"));
         assert_eq!(record_test.line(), Some(30));
+        assert_eq!(record_test.key_values().count(), 2);
     }
 
     #[test]

@@ -16,8 +16,8 @@ macro_rules! properties(
         tokens: [$($tokens:tt)*],
         kvs_ident: $kvs_ident:ident
     }) => {
-        let kvs: &[(&str, &dyn $crate::properties::ToValue)] = &[$($tokens)*];
-        let $kvs_ident = $crate::properties::RawKeyValues(&kvs);
+        let kvs: &[(&str, &dyn $crate::key_values::ToValue)] = &[$($tokens)*];
+        let $kvs_ident = $crate::key_values::RawKeyValues(&kvs);
     };
     // Munch a key identifier from the token stream
     (@ expect_adapter {
@@ -202,7 +202,7 @@ macro_rules! properties(
         properties!(@ with_value {
             stream: [$($stream)*],
             tokens: [$($tokens)*],
-            adapter_fn: $crate::properties::adapter::map::$adapter_kind,
+            adapter_fn: $crate::key_values::adapter::map::$adapter_kind,
             key: $key,
             value: $value,
             kvs_ident: $kvs_ident
@@ -225,7 +225,7 @@ macro_rules! properties(
             stream: [$($stream)*],
             tokens: [$($tokens)*],
             adapter_fn: |value| {
-                $crate::properties::adapter::map_with::$adapter_kind(value, $adapter_state)
+                $crate::key_values::adapter::map_with::$adapter_kind(value, $adapter_state)
             },
             key: $key,
             value: $value,
