@@ -241,61 +241,6 @@ impl<'a> KeyValues for RawKeyValues<'a> {
     }
 }
 
-/// A chain of key value pairs.
-#[derive(Clone)]
-pub(crate) struct Chained<'a> {
-    kvs: &'a dyn KeyValues,
-    parent: Option<&'a Chained<'a>>,
-}
-
-impl<'a> Chained<'a> {
-    /// Create a new set of properties with no key value pairs.
-    pub fn empty() -> Self {
-        Chained {
-            kvs: &EmptyKeyValues,
-            parent: None,
-        }
-    }
-
-    /// Create a new set of properties with the given initial key value pairs.
-    pub fn root(properties: &'a dyn KeyValues) -> Self {
-        Chained {
-            kvs: properties,
-            parent: None
-        }
-    }
-
-    /// Create a new set of properties with a parent and additional key value pairs.
-    pub fn chained(properties: &'a dyn KeyValues, parent: &'a Chained) -> Self {
-        Chained {
-            kvs: properties,
-            parent: Some(parent)
-        }
-    }
-}
-
-impl<'a> KeyValues for Chained<'a> {
-    fn visit(&self, visitor: &mut dyn Visitor) {
-        self.kvs.visit(visitor);
-
-        if let Some(parent) = self.parent {
-            parent.visit(visitor);
-        }
-    }
-}
-
-impl<'a> fmt::Debug for Chained<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Chained").finish()
-    }
-}
-
-impl<'a> Default for Chained<'a> {
-    fn default() -> Self {
-        Chained::empty()
-    }
-}
-
 /// Serialize key values as a map.
 pub trait AsMap {
     fn as_map(&self) -> Map;

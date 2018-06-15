@@ -720,7 +720,7 @@ impl LevelFilter {
 pub struct Record<'a> {
     header: Header<'a>,
     #[cfg(feature = "serde")]
-    kvs: key_values::Chained<'a>,
+    kvs: RecordKeyValues<'a>,
 }
 
 #[derive(Clone, Debug)]
@@ -730,6 +730,22 @@ struct Header<'a> {
     module_path: Option<&'a str>,
     file: Option<&'a str>,
     line: Option<u32>,
+}
+
+/// A chain of key value pairs.
+#[derive(Clone)]
+struct RecordKeyValues<'a>(&'a dyn key_values::KeyValues);
+
+impl<'a> fmt::Debug for RecordKeyValues<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("KeyValues").finish()
+    }
+}
+
+impl<'a> Default for RecordKeyValues<'a> {
+    fn default() -> Self {
+        RecordKeyValues(&key_values::RawKeyValues(&[]))
+    }
 }
 
 impl<'a> Record<'a> {
@@ -781,13 +797,15 @@ impl<'a> Record<'a> {
         self.header.line
     }
 
-    /// Get a new borrowed record with the additional key values.
+    /// Get a new borrowed record with a new set of key values.
+    /// 
+    /// Other record metadata will be the same.
     #[inline]
     #[cfg(feature = "serde")]
-    pub fn push_key_values<'b>(&'b self, kvs: &'b dyn key_values::KeyValues) -> Record<'b> {
+    pub fn with_key_values<'b>(&'b self, kvs: &'b dyn key_values::KeyValues) -> Record<'b> {
         Record {
             header: self.header.clone(),
-            kvs: key_values::Chained::chained(kvs, &self.kvs)
+            kvs: RecordKeyValues(kvs),
         }
     }
 
@@ -797,7 +815,7 @@ impl<'a> Record<'a> {
     #[inline]
     #[cfg(feature = "serde")]
     pub fn key_values(&self) -> &dyn key_values::KeyValues {
-        &self.kvs
+        &self.kvs.0
     }
 }
 
@@ -929,7 +947,7 @@ impl<'a> RecordBuilder<'a> {
     #[inline]
     #[cfg(feature = "serde")]
     pub fn key_values(&mut self, kvs: &'a dyn key_values::KeyValues) -> &mut RecordBuilder<'a> {
-        self.record.kvs = key_values::Chained::root(kvs);
+        self.record.kvs = RecordKeyValues(kvs);
         self
     }
 
