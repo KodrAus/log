@@ -243,12 +243,12 @@ impl<'a> KeyValues for RawKeyValues<'a> {
 
 /// Serialize key values as a map.
 pub trait AsMap {
-    fn as_map(&self) -> Map;
+    fn as_map(&self) -> Map<&Self>;
 }
 
-impl<'a> AsMap for &'a dyn KeyValues {
-    fn as_map(&self) -> Map {
-        Map::new(self)
+impl<KVS> AsMap for KVS where KVS: KeyValue {
+    fn as_map(&self) -> Map<&KVS> {
+        Map::new(&self)
     }
 }
 
@@ -259,15 +259,15 @@ impl<'a> AsMap for &'a dyn KeyValues {
 /// 
 /// If this type wraps a set of key value pairs then it can be serialized itself
 /// using `serde`.
-pub struct Map<'a>(&'a dyn KeyValues);
+pub struct Map<KVS>(KVS);
 
-impl<'a> Map<'a> {
-    pub fn new(kvs: &'a impl KeyValues) -> Self {
+impl<KVS> Map<KVS> {
+    pub fn new(kvs: KVS) -> Self {
         Map(kvs)
     }
 }
 
-impl<'a> serde::Serialize for Map<'a> {
+impl<KVS> serde::Serialize for Map<KVS> where KVS: KeyValues {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: serde::Serializer
@@ -289,7 +289,7 @@ impl<'a> serde::Serialize for Map<'a> {
     }
 }
 
-impl<'a> fmt::Debug for Map<'a> {
+impl<KVS> fmt::Debug for Map<KVS> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Map").finish()
     }
@@ -297,11 +297,11 @@ impl<'a> fmt::Debug for Map<'a> {
 
 /// Serialize key values as a sequence.
 pub trait AsSeq {
-    fn as_seq(&self) -> Seq;
+    fn as_seq(&self) -> Seq<&Self>;
 }
 
-impl<'a> AsSeq for &'a dyn KeyValues {
-    fn as_seq(&self) -> Seq {
+impl<KVS> AsSeq for KVS where KVS: KeyValues {
+    fn as_seq(&self) -> Seq<&Self> {
         Seq::new(self)
     }
 }
@@ -313,15 +313,15 @@ impl<'a> AsSeq for &'a dyn KeyValues {
 /// 
 /// If this type wraps a set of key value pairs then it can be serialized itself
 /// using `serde`.
-pub struct Seq<'a>(&'a dyn KeyValues);
+pub struct Seq<KVS>(KVS);
 
-impl<'a> Seq<'a> {
-    pub fn new(kvs: &'a impl KeyValues) -> Self {
+impl<KVS> Seq<KVS> {
+    pub fn new(kvs: KVS) -> Self {
         Seq(kvs)
     }
 }
 
-impl<'a> serde::Serialize for Seq<'a> {
+impl<KVS> serde::Serialize for Seq<KVS> where KVS: KeyValues {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: serde::Serializer
@@ -343,7 +343,7 @@ impl<'a> serde::Serialize for Seq<'a> {
     }
 }
 
-impl<'a> fmt::Debug for Seq<'a> {
+impl<KVS> fmt::Debug for Seq<KVS> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Seq").finish()
     }
