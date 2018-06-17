@@ -246,7 +246,7 @@ pub trait AsMap {
     fn as_map(&self) -> Map<&Self>;
 }
 
-impl<KVS> AsMap for KVS where KVS: KeyValue {
+impl<KVS> AsMap for KVS where KVS: KeyValues {
     fn as_map(&self) -> Map<&KVS> {
         Map::new(&self)
     }

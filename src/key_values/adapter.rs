@@ -2,8 +2,6 @@ pub mod map {
     use serde;
     use std::fmt::{Debug, Display};
     #[cfg(any(feature = "alloc", feature = "std"))]
-    use std::fmt;
-    #[cfg(any(feature = "alloc", feature = "std"))]
     use std::path::Path;
 
     use key_values::{Value, ToValue};
@@ -53,6 +51,8 @@ pub mod map {
     /// If the path contains invalid UTF8 characters then they will be escaped.
     #[cfg(any(feature = "alloc", feature = "std"))]
     pub fn path(v: impl AsRef<Path>) -> impl ToValue {
+        use std::fmt;
+        
         #[derive(Debug)]
         struct PathAdapter<T>(T);
 

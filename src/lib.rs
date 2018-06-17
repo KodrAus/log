@@ -282,7 +282,7 @@
 #[cfg(not(feature = "std"))]
 extern crate core as std;
 
-#[cfg(any(feature = "std", feature = "alloc"))]
+#[cfg(feature = "erased-serde")]
 extern crate erased_serde;
 #[cfg(feature = "serde")]
 extern crate serde;
