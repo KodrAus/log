@@ -10,7 +10,6 @@ macro_rules! properties(
     };
 
     // We're finished parsing
-    // Create the set of key value pairs and 
     (@ expect_adapter {
         stream: [],
         tokens: [$($tokens:tt)*],

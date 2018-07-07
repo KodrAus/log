@@ -285,6 +285,7 @@ extern crate core as std;
 #[cfg(feature = "erased-serde")]
 extern crate erased_serde;
 #[cfg(feature = "serde")]
+#[macro_use]
 extern crate serde;
 
 #[macro_use]
@@ -1478,6 +1479,7 @@ mod tests {
     fn test_record_builder() {
         use super::{MetadataBuilder, RecordBuilder};
         use key_values::RawKeyValues;
+        
         let target = "myApp";
         let metadata = MetadataBuilder::new().target(target).build();
         let fmt_args = format_args!("hello");

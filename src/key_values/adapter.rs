@@ -25,7 +25,7 @@ pub mod map {
             T: serde::Serialize,
         {
             fn to_value(&self) -> Value {
-                Value::serde(&self.0)
+                Value::from_serde(&self.0)
             }
         }
 
@@ -114,7 +114,7 @@ pub mod map_with {
             F: Fn(&T, &mut Formatter) -> Result,
         {
             fn to_value(&self) -> Value {
-                Value::fmt(self)
+                Value::from_display(self)
             }
         }
 

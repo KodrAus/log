@@ -2,6 +2,7 @@
 
 #[macro_use]
 mod macros;
+mod primitive;
 
 pub mod adapter;
 
@@ -26,28 +27,12 @@ pub trait Visitor {
 pub trait KeyValues {
     /// Serialize the key value pairs.
     fn visit(&self, visitor: &mut dyn Visitor);
-
-    /// Count the number of key value pairs.
-    fn count(&self) -> usize {
-        struct Counter(usize);
-
-        impl Visitor for Counter {
-            fn visit_kv(&mut self, kv: &dyn KeyValue) {
-                self.0 += 1;
-            }
-        }
-
-        let mut counter = Counter(0);
-        self.visit(&mut counter);
-
-        counter.0
-    }
 }
 
 /// A single key value pair.
 pub trait KeyValue {
     /// Get the key.
-    fn key(&self) -> &str;
+    fn key(&self) -> Key;
     /// Get the value.
     fn value(&self) -> Value;
 }
@@ -56,6 +41,12 @@ pub trait KeyValue {
 pub trait ToValue {
     /// Perform the conversion.
     fn to_value(&self) -> Value;
+}
+
+/// Converting into a `Key`.
+pub trait ToKey {
+    /// Perform the conversion.
+    fn to_key(&self) -> Key;
 }
 
 impl<KV> KeyValues for [KV] where KV: KeyValue {
@@ -109,11 +100,11 @@ where
 
 impl<K, V> KeyValue for (K, V)
 where
-    K: AsRef<str>,
+    K: ToKey,
     V: ToValue,
 {
-    fn key(&self) -> &str {
-        self.0.as_ref()
+    fn key(&self) -> Key {
+        self.0.to_key()
     }
 
     fn value(&self) -> Value {
@@ -125,7 +116,7 @@ impl<'a, T: ?Sized> KeyValue for &'a T
 where
     T: KeyValue
 {
-    fn key(&self) -> &str {
+    fn key(&self) -> Key {
         (*self).key()
     }
 
@@ -146,18 +137,33 @@ impl<'a> ToValue for &'a dyn ToValue {
     }
 }
 
+impl<T: fmt::Display> ToKey for T {
+    fn to_key(&self) -> Key {
+        Key::from_display(self)
+    }
+}
+
+impl<'a> ToKey for &'a dyn ToKey {
+    fn to_key(&self) -> Key {
+        (*self).to_key()
+    }
+}
+
 /// A single property value.
 /// 
-/// Values implement `serde::Serialize`.
+/// Values borrow their underlying data and implement `serde::Serialize`.
+#[derive(Clone)]
 pub struct Value<'a> {
     inner: ValueInner<'a>,
 }
 
 #[derive(Clone, Copy)]
 enum ValueInner<'a> {
-    Fmt(&'a dyn fmt::Display),
+    Display(&'a dyn fmt::Display),
     #[cfg(feature = "erased-serde")]
     Serde(&'a dyn erased_serde::Serialize),
+    #[cfg(not(feature = "erased-serde"))]
+    Primitive(primitive::Primitive),
 }
 
 impl<'a> ToValue for Value<'a> {
@@ -172,9 +178,13 @@ impl<'a> serde::Serialize for Value<'a> {
         S: serde::Serializer,
     {
         match self.inner {
-            ValueInner::Fmt(v) => serializer.collect_str(&v),
+            ValueInner::Display(v) => serializer.collect_str(&v),
+
             #[cfg(feature = "erased-serde")]
             ValueInner::Serde(v) => v.serialize(serializer),
+
+            #[cfg(not(feature = "erased-serde"))]
+            ValueInner::Primitive(v) => v.serialize(serializer),
         }
     }
 }
@@ -192,22 +202,30 @@ impl<'a> Value<'a> {
                 {
                     ValueInner::Serde(v)
                 }
+
                 #[cfg(not(feature = "erased-serde"))]
                 {
-                    ValueInner::Fmt(v)
+                    // Try capture a primitive value
+                    // If we can represent it on the stack then we can avoid using
+                    // the `Display` implementation
+                    if let Some(primitive) = primitive::Primitive::try_from(v) {
+                        ValueInner::Primitive(primitive)
+                    } else {
+                        ValueInner::Display(v)
+                    }
                 }
             }
         }
     }
 
-    pub fn fmt(v: &'a impl fmt::Display) -> Self {
+    pub fn from_display(v: &'a impl fmt::Display) -> Self {
         Value {
-            inner: ValueInner::Fmt(v),
+            inner: ValueInner::Display(v),
         }
     }
 
     #[cfg(feature = "erased-serde")]
-    pub fn serde(v: &'a impl serde::Serialize) -> Self {
+    pub fn from_serde(v: &'a impl serde::Serialize) -> Self {
         Value {
             inner: ValueInner::Serde(v),
         }
@@ -217,6 +235,54 @@ impl<'a> Value<'a> {
 impl<'a> fmt::Debug for Value<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Value").finish()
+    }
+}
+
+/// A single property key.
+/// 
+/// `Key`s borrow their underlying data and implement `serde::Serialize`.
+#[derive(Clone)]
+pub struct Key<'a> {
+    inner: KeyInner<'a>,
+}
+
+#[derive(Clone, Copy)]
+enum KeyInner<'a> {
+    Display(&'a dyn fmt::Display),
+}
+
+impl<'a> Key<'a> {
+    pub fn from_display(key: &'a impl fmt::Display) -> Self {
+        Key {
+            inner: KeyInner::Display(key),
+        }
+    }
+}
+
+impl<'a> serde::Serialize for Key<'a> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self.inner {
+            KeyInner::Display(v) => serializer.collect_str(&v),
+        }
+    }
+}
+
+impl<'a> fmt::Debug for Key<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.inner {
+            KeyInner::Display(k) => write!(f, "{}", k)
+        }
+    }
+}
+
+impl<'a> fmt::Display for Key<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.inner {
+            KeyInner::Display(k) => write!(f, "{}", k)
+        }
     }
 }
 
@@ -277,7 +343,7 @@ impl<KVS> serde::Serialize for Map<KVS> where KVS: KeyValues {
         struct SerdeVisitor<M>(M);
         impl<M> Visitor for SerdeVisitor<M> where M: SerializeMap {
             fn visit_kv(&mut self, kv: &dyn KeyValue) {
-                let _ = SerializeMap::serialize_entry(&mut self.0, kv.key(), &kv.value());
+                let _ = SerializeMap::serialize_entry(&mut self.0, &kv.key(), &kv.value());
             }
         }
 
@@ -350,13 +416,13 @@ impl<KVS> fmt::Debug for Seq<KVS> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod test {
     extern crate serde_test;
     use self::serde_test::{assert_de_tokens, assert_de_tokens_error, assert_tokens, Token};
 
     use super::*;
     
-    struct CheckKeyValues<F>(F);
+    pub(crate) struct CheckKeyValues<F>(F);
 
     impl<F> Serializer for CheckKeyValues<F>
     where

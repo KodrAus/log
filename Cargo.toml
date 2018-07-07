@@ -38,6 +38,7 @@ release_max_level_trace = []
 
 default = ["serde"]
 
+i128 = []
 std = ["serde/std", "erased-serde/std"]
 alloc = ["serde/alloc", "erased-serde/alloc"]
 
@@ -50,5 +51,5 @@ cfg-if = "0.1.2"
 serde = { version = "1.0", default-features = false, optional = true }
 erased-serde = { version = "*", path = "../erased-serde", default-features = false, optional = true }
 
-[dev-dependencies]
-serde_test = "1.0"
+# [dev-dependencies]
+# serde_test = "1.0"
