@@ -1,4 +1,15 @@
-//! Log record properties.
+//! Structured properties for log records.
+//! 
+//! Structured logging in `log` is made up of a few traits:
+//! 
+//! - [`KeyValues`]: A set of [`KeyValue`]s
+//! - [`KeyValue`]: A single [`Key`] and [`Value`] pair
+//! - [`ToKey`]: Any type that can be converted into a [`Key`]
+//! - [`ToValue`]: Any type that can be converted into a [`Value`]
+//! - [`Visitor`]: A type that can visit [`Key`]s and [`Value`]s.
+//! Visitors are driven by [`KeyValues`].
+//! 
+//! Structured logging uses `serde` for serializing key value pairs.
 
 #[macro_use]
 mod macros;
@@ -22,27 +33,40 @@ pub use self::value::{Value, ToValue};
 /// A set of key value pairs that can be serialized.
 pub trait KeyValues {
     /// Serialize the key value pairs.
+    /// 
+    /// This would usually mean iterating through some collection of [`KeyValue`]s
+    /// and calling `visit` on each of them.
     fn visit(&self, visitor: &mut dyn Visitor);
 }
 
 /// A single key value pair.
 pub trait KeyValue {
-    /// Get the key.
-    fn key(&self) -> Key;
-    /// Get the value.
-    fn value(&self) -> Value;
+    /// Serialize the key value pair.
+    /// 
+    /// This would usually mean calling [`Visitor::visit_key`] and [`Visitor::visit_value`] on some internal
+    /// key and value.
+    fn visit(&self, visitor: &mut dyn Visitor);
 }
 
 /// A visitor for key value pairs.
 pub trait Visitor {
-    /// Visit the key and value.
-    fn visit_kv(&mut self, kv: &dyn KeyValue);
+    /// Visit a key.
+    /// 
+    /// Calling `visit_key` multiple times in a row is incorrect and allowed to panic
+    /// or produce bogus results.
+    fn visit_key(&mut self, k: Key);
+
+    /// Visit a value.
+    /// 
+    /// Calling `visit_value` before `visit_key`, or multiple times in a row is
+    /// incorrect and allowed to panic or produce bogus results.
+    fn visit_value(&mut self, v: Value);
 }
 
 impl<KV> KeyValues for [KV] where KV: KeyValue {
     fn visit(&self, visitor: &mut dyn Visitor) {
         for kv in self {
-            visitor.visit_kv(&kv);
+            kv.visit(visitor);
         }
     }
 }
@@ -61,7 +85,7 @@ where
 {
     fn visit(&self, visitor: &mut dyn Visitor) {
         for kv in self {
-            visitor.visit_kv(&kv);
+            kv.visit(visitor);
         }
     }
 }
@@ -74,8 +98,21 @@ where
 {
     fn visit(&self, visitor: &mut dyn Visitor) {
         for kv in self {
-            visitor.visit_kv(&kv);
+            kv.visit(visitor);
         }
+    }
+}
+
+impl<'a, T: ?Sized> Visitor for &'a mut T
+where
+    T: Visitor,
+{
+    fn visit_key(&mut self, k: Key) {
+        (*self).visit_key(k)
+    }
+
+    fn visit_value(&mut self, v: Value) {
+        (*self).visit_value(v)
     }
 }
 
@@ -93,12 +130,9 @@ where
     K: ToKey,
     V: ToValue,
 {
-    fn key(&self) -> Key {
-        self.0.to_key()
-    }
-
-    fn value(&self) -> Value {
-        self.1.to_value()
+    fn visit(&self, visitor: &mut dyn Visitor) {
+        visitor.visit_key(self.0.to_key());
+        visitor.visit_value(self.1.to_value());
     }
 }
 
@@ -106,17 +140,14 @@ impl<'a, T: ?Sized> KeyValue for &'a T
 where
     T: KeyValue,
 {
-    fn key(&self) -> Key {
-        (*self).key()
-    }
-
-    fn value(&self) -> Value {
-        (*self).value()
+    fn visit(&self, visitor: &mut dyn Visitor) {
+        (*self).visit(visitor)
     }
 }
 
 /// Serialize key values as a map.
 pub trait AsMap {
+    /// Get a `Map` that can be serialized using `serde`.
     fn as_map(&self) -> Map<&Self>;
 }
 
@@ -136,6 +167,7 @@ impl<KVS> AsMap for KVS where KVS: KeyValues {
 pub struct Map<KVS>(KVS);
 
 impl<KVS> Map<KVS> {
+    /// Create a new `Map`.
     pub fn new(kvs: KVS) -> Self {
         Map(kvs)
     }
@@ -150,8 +182,12 @@ impl<KVS> serde::Serialize for Map<KVS> where KVS: KeyValues {
 
         struct SerdeVisitor<M>(M);
         impl<M> Visitor for SerdeVisitor<M> where M: SerializeMap {
-            fn visit_kv(&mut self, kv: &dyn KeyValue) {
-                let _ = SerializeMap::serialize_entry(&mut self.0, &kv.key(), &kv.value());
+            fn visit_key(&mut self, k: Key) {
+                let _ = SerializeMap::serialize_key(&mut self.0, &k);
+            }
+
+            fn visit_value(&mut self, v: Value) {
+                let _ = SerializeMap::serialize_key(&mut self.0, &v);
             }
         }
 
@@ -166,60 +202,6 @@ impl<KVS> serde::Serialize for Map<KVS> where KVS: KeyValues {
 impl<KVS> fmt::Debug for Map<KVS> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Map").finish()
-    }
-}
-
-/// Serialize key values as a sequence.
-pub trait AsSeq {
-    fn as_seq(&self) -> Seq<&Self>;
-}
-
-impl<KVS> AsSeq for KVS where KVS: KeyValues {
-    fn as_seq(&self) -> Seq<&Self> {
-        Seq::new(self)
-    }
-}
-
-/// A `serde` adapter to serialize key values as tuple elements in a sequence.
-/// 
-/// If this type wraps a `serde` serializer then it can be used as a serializer
-/// for key value pairs.
-/// 
-/// If this type wraps a set of key value pairs then it can be serialized itself
-/// using `serde`.
-pub struct Seq<KVS>(KVS);
-
-impl<KVS> Seq<KVS> {
-    pub fn new(kvs: KVS) -> Self {
-        Seq(kvs)
-    }
-}
-
-impl<KVS> serde::Serialize for Seq<KVS> where KVS: KeyValues {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer,
-    {
-        use serde::ser::SerializeSeq;
-
-        struct SerdeVisitor<M>(M);
-        impl<S> Visitor for SerdeVisitor<S> where S: SerializeSeq {
-            fn visit_kv(&mut self, kv: &dyn KeyValue) {
-                let _ = SerializeSeq::serialize_element(&mut self.0, &(kv.key(), kv.value()));
-            }
-        }
-
-        let mut seq = SerdeVisitor(serializer.serialize_seq(None)?);
-
-        KeyValues::visit(&self.0, &mut seq);
-
-        seq.0.end()
-    }
-}
-
-impl<KVS> fmt::Debug for Seq<KVS> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Seq").finish()
     }
 }
 

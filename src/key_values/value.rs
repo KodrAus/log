@@ -27,8 +27,7 @@ impl<'a> ToValue for &'a dyn ToValue {
 /// A single property value.
 /// 
 /// Values borrow their underlying data and implement `serde::Serialize`.
-#[derive(Clone, Copy)]
-#[allow(missing_debug_implementations)]
+#[derive(Clone)]
 pub struct Value<'a> {
     inner: ValueInner<'a>,
 }
@@ -48,29 +47,19 @@ impl<'a> ToValue for Value<'a> {
     }
 }
 
-impl<'a> serde::Serialize for Value<'a> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        match self.inner {
-            ValueInner::Display(v) => serializer.collect_str(&v),
-
-            #[cfg(feature = "erased-serde")]
-            ValueInner::Serde(v) => v.serialize(serializer),
-
-            #[cfg(not(feature = "erased-serde"))]
-            ValueInner::Primitive(v) => v.serialize(serializer),
-        }
-    }
-}
-
 impl<'a> Value<'a> {
     /// Create a new value.
     /// 
     /// The value must implement both `serde::Serialize` and `fmt::Display`.
     /// Either implementation will be used depending on whether the standard
     /// library is available, but is exposed through the same API.
+    /// 
+    /// In environments where the standard library is available, the `Serialize`
+    /// implementation will be used.
+    /// 
+    /// In environments where the standard library is not available, some
+    /// primitive stack-based values can retain their structure instead of falling
+    /// back to `Display`.
     pub fn new(v: &'a (impl serde::Serialize + fmt::Display)) -> Self {
         Value {
             inner: {
@@ -94,18 +83,41 @@ impl<'a> Value<'a> {
         }
     }
 
-    /// Get a `Value` from some displayable reference.
+    /// Get a `Value` from a displayable reference.
     pub fn from_display(v: &'a impl fmt::Display) -> Self {
         Value {
             inner: ValueInner::Display(v),
         }
     }
 
-    /// Get a `Value` from some serializable reference.
+    /// Get a `Value` from a serializable reference.
     #[cfg(feature = "erased-serde")]
     pub fn from_serde(v: &'a impl serde::Serialize) -> Self {
         Value {
             inner: ValueInner::Serde(v),
         }
+    }
+}
+
+impl<'a> serde::Serialize for Value<'a> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self.inner {
+            ValueInner::Display(v) => serializer.collect_str(&v),
+
+            #[cfg(feature = "erased-serde")]
+            ValueInner::Serde(v) => v.serialize(serializer),
+
+            #[cfg(not(feature = "erased-serde"))]
+            ValueInner::Primitive(v) => v.serialize(serializer),
+        }
+    }
+}
+
+impl<'a> fmt::Debug for Value<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Value").finish()
     }
 }

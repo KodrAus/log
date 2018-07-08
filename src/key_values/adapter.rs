@@ -1,4 +1,8 @@
+//! Adapters for key values in the `log` macros.
+
 pub mod map {
+    //! Receivers for `#[log($adapter)]` attributes.
+    
     use serde;
     use std::fmt::{Debug, Display};
     #[cfg(any(feature = "alloc", feature = "std"))]
@@ -87,6 +91,8 @@ pub mod map {
 }
 
 pub mod map_with {
+    //! Receivers for `#[log($adapter = $state)]` attributes.
+    
     use std::fmt::{Debug, Display, Formatter, Result};
 
     use key_values::{Value, ToValue};
