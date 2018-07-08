@@ -5,7 +5,7 @@ use serde::ser::{Error, Serializer, Serialize, Impossible};
 pub struct Primitive(PrimitiveInner);
 
 #[derive(Clone, Copy)]
-pub enum PrimitiveInner {
+enum PrimitiveInner {
     Unsigned(u64),
     Signed(i64),
     Float(f64),
@@ -127,16 +127,14 @@ impl Serializer for PrimitiveSerializer {
         Ok(Primitive(PrimitiveInner::Unsigned(v)))
     }
 
-    serde_if_integer128! {
-        #[cfg(feature = "i128")]
-        fn serialize_u128(self, v: u128) -> Result<Primitive, Invalid> {
-            Ok(Primitive(PrimitiveInner::BigUnsigned(v)))
-        }
+    #[cfg(feature = "i128")]
+    fn serialize_u128(self, v: u128) -> Result<Primitive, Invalid> {
+        Ok(Primitive(PrimitiveInner::BigUnsigned(v)))
+    }
 
-        #[cfg(feature = "i128")]
-        fn serialize_i128(self, v: i128) -> Result<Primitive, Invalid> {
-            Ok(Primitive(PrimitiveInner::BigSigned(v)))
-        }
+    #[cfg(feature = "i128")]
+    fn serialize_i128(self, v: i128) -> Result<Primitive, Invalid> {
+        Ok(Primitive(PrimitiveInner::BigSigned(v)))
     }
 
     fn serialize_f32(self, v: f32) -> Result<Primitive, Invalid> {
