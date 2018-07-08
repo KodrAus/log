@@ -3,12 +3,16 @@
 pub mod map {
     //! Receivers for `#[log($adapter)]` attributes.
     
-    use serde;
     use std::fmt::{Debug, Display};
     #[cfg(any(feature = "alloc", feature = "std"))]
     use std::path::Path;
 
-    use key_values::{Value, ToValue};
+    #[cfg(feature = "erased-serde")]
+    use serde;
+    
+    #[cfg(feature = "erased-serde")]
+    use key_values::Value;
+    use key_values::ToValue;
     use super::*;
     
     /// The default property adapter used when no `#[log]` attribute is present.
@@ -93,10 +97,9 @@ pub mod map {
 pub mod map_with {
     //! Receivers for `#[log($adapter = $state)]` attributes.
     
-    use std::fmt::{Debug, Display, Formatter, Result};
+    use std::fmt::{Display, Formatter, Result};
 
     use key_values::{Value, ToValue};
-    use super::*;
 
     /// `#[log(fmt = expr)]` Format a property value using a specific format.
     pub fn fmt<T>(value: T, adapter: impl Fn(&T, &mut Formatter) -> Result) -> impl ToValue {

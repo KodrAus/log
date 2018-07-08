@@ -285,7 +285,6 @@ extern crate core as std;
 #[cfg(feature = "erased-serde")]
 extern crate erased_serde;
 #[cfg(feature = "serde")]
-#[macro_use]
 extern crate serde;
 
 #[macro_use]
@@ -798,18 +797,6 @@ impl<'a> Record<'a> {
         self.header.line
     }
 
-    /// Get a new borrowed record with a new set of key values.
-    /// 
-    /// Other record metadata will be the same.
-    #[inline]
-    #[cfg(feature = "serde")]
-    pub fn with_key_values<'b>(&'b self, kvs: &'b dyn key_values::KeyValues) -> Record<'b> {
-        Record {
-            header: self.header.clone(),
-            kvs: RecordKeyValues(kvs),
-        }
-    }
-
     /// The key value pairs attached to this record.
     /// 
     /// Pairs aren't guaranteed to be unique (the same key may be repeated with different values).
@@ -817,6 +804,15 @@ impl<'a> Record<'a> {
     #[cfg(feature = "serde")]
     pub fn key_values(&self) -> &dyn key_values::KeyValues {
         &self.kvs.0
+    }
+
+    /// Get a builder from this record.
+    /// 
+    /// Values on the builder will be preset from the record.
+    pub fn to_builder(&self) -> RecordBuilder {
+        RecordBuilder {
+            record: self.clone(),
+        }
     }
 }
 

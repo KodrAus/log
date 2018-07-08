@@ -13,9 +13,10 @@
 
 #[macro_use]
 mod macros;
-mod primitive;
 mod key;
 mod value;
+#[cfg(not(feature = "erased-serde"))]
+mod primitive;
 
 pub mod adapter;
 
@@ -50,17 +51,8 @@ pub trait KeyValue {
 
 /// A visitor for key value pairs.
 pub trait Visitor {
-    /// Visit a key.
-    /// 
-    /// Calling `visit_key` multiple times in a row is incorrect and allowed to panic
-    /// or produce bogus results.
-    fn visit_key(&mut self, k: Key);
-
-    /// Visit a value.
-    /// 
-    /// Calling `visit_value` before `visit_key`, or multiple times in a row is
-    /// incorrect and allowed to panic or produce bogus results.
-    fn visit_value(&mut self, v: Value);
+    /// Visit a key value pair.
+    fn visit_pair(&mut self, k: Key, v: Value);
 }
 
 impl<KV> KeyValues for [KV] where KV: KeyValue {
@@ -107,12 +99,8 @@ impl<'a, T: ?Sized> Visitor for &'a mut T
 where
     T: Visitor,
 {
-    fn visit_key(&mut self, k: Key) {
-        (*self).visit_key(k)
-    }
-
-    fn visit_value(&mut self, v: Value) {
-        (*self).visit_value(v)
+    fn visit_pair(&mut self, k: Key, v: Value) {
+        (*self).visit_pair(k, v)
     }
 }
 
@@ -131,8 +119,7 @@ where
     V: ToValue,
 {
     fn visit(&self, visitor: &mut dyn Visitor) {
-        visitor.visit_key(self.0.to_key());
-        visitor.visit_value(self.1.to_value());
+        visitor.visit_pair(self.0.to_key(), self.1.to_value());
     }
 }
 
@@ -182,12 +169,8 @@ impl<KVS> serde::Serialize for Map<KVS> where KVS: KeyValues {
 
         struct SerdeVisitor<M>(M);
         impl<M> Visitor for SerdeVisitor<M> where M: SerializeMap {
-            fn visit_key(&mut self, k: Key) {
-                let _ = SerializeMap::serialize_key(&mut self.0, &k);
-            }
-
-            fn visit_value(&mut self, v: Value) {
-                let _ = SerializeMap::serialize_key(&mut self.0, &v);
+            fn visit_pair(&mut self, k: Key, v: Value) {
+                let _ = SerializeMap::serialize_entry(&mut self.0, &k, &v);
             }
         }
 
@@ -203,12 +186,6 @@ impl<KVS> fmt::Debug for Map<KVS> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Map").finish()
     }
-}
-
-pub(crate) struct EmptyKeyValues;
-
-impl KeyValues for EmptyKeyValues {
-    fn visit(&self, visitor: &mut dyn Visitor) { }
 }
 
 #[doc(hidden)]

@@ -1,4 +1,6 @@
-use std::{self, fmt};
+#[cfg(feature = "std")]
+use std::error;
+use std::fmt;
 use serde::ser::{Error, Serializer, Serialize, Impossible};
 
 #[derive(Clone, Copy)]
@@ -63,8 +65,8 @@ impl Error for Invalid {
 }
 
 #[cfg(feature = "std")]
-impl std::error::Error for Invalid {
-    fn cause(&self) -> Option<&std::error::Error> {
+impl error::Error for Invalid {
+    fn cause(&self) -> Option<&error::Error> {
         None
     }
 
@@ -149,15 +151,15 @@ impl Serializer for PrimitiveSerializer {
         Ok(Primitive(PrimitiveInner::Char(v)))
     }
 
-    fn serialize_str(self, v: &str) -> Result<Primitive, Invalid> {
+    fn serialize_str(self, _v: &str) -> Result<Primitive, Invalid> {
         Err(Invalid)
     }
 
-    fn collect_str<T: fmt::Display + ?Sized>(self, v: &T) -> Result<Primitive, Invalid> {
+    fn collect_str<T: fmt::Display + ?Sized>(self, _v: &T) -> Result<Primitive, Invalid> {
         Err(Invalid)
     }
 
-    fn serialize_bytes(self, v: &[u8]) -> Result<Primitive, Invalid> {
+    fn serialize_bytes(self, _v: &[u8]) -> Result<Primitive, Invalid> {
         Err(Invalid)
     }
 
@@ -165,11 +167,11 @@ impl Serializer for PrimitiveSerializer {
         Err(Invalid)
     }
 
-    fn serialize_some<T>(self, value: &T) -> Result<Primitive, Invalid>
+    fn serialize_some<T>(self, v: &T) -> Result<Primitive, Invalid>
     where
         T: ?Sized + Serialize,
     {
-        value.serialize(self)
+        v.serialize(self)
     }
 
     fn serialize_unit(self) -> Result<Primitive, Invalid> {

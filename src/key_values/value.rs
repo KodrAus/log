@@ -4,6 +4,7 @@ use serde;
 #[cfg(feature = "erased-serde")]
 use erased_serde;
 
+#[cfg(not(feature = "erased-serde"))]
 use super::primitive::Primitive;
 
 /// Converting into a `Value`.
