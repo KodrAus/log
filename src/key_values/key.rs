@@ -1,3 +1,8 @@
+//! Log property keys.
+//! 
+//! This module contains the `Key` type,
+//! which is roughly a `dyn AsRef<str>`.
+
 use std::{fmt, cmp, hash};
 #[cfg(feature = "std")]
 use std::borrow;

@@ -145,12 +145,6 @@ impl<KVS> AsMap for KVS where KVS: KeyValues {
 }
 
 /// A `serde` adapter to serialize key values as entries in a map.
-/// 
-/// If this type wraps a `serde` serializer then it can be used as a serializer
-/// for key value pairs.
-/// 
-/// If this type wraps a set of key value pairs then it can be serialized itself
-/// using `serde`.
 pub struct Map<KVS>(KVS);
 
 impl<KVS> Map<KVS> {

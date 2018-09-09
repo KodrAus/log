@@ -1,3 +1,8 @@
+//! Log property values.
+//! 
+//! This module contains the `Value` type,
+//! which is roughly a `dyn Serialize + Display`.
+
 use std::fmt;
 use serde;
 
@@ -5,7 +10,7 @@ use serde;
 use erased_serde;
 
 #[cfg(not(feature = "erased-serde"))]
-use super::primitive::Primitive;
+use super::primitive::ToPrimitive;
 
 /// Converting into a `Value`.
 pub trait ToValue {
@@ -39,7 +44,7 @@ enum ValueInner<'a> {
     #[cfg(feature = "erased-serde")]
     Serde(&'a dyn erased_serde::Serialize),
     #[cfg(not(feature = "erased-serde"))]
-    Primitive(Primitive),
+    Primitive(&'a dyn ToPrimitive),
 }
 
 impl<'a> ToValue for Value<'a> {
@@ -72,10 +77,8 @@ impl<'a> Value<'a> {
                 #[cfg(not(feature = "erased-serde"))]
                 {
                     // Try capture a primitive value
-                    // If we can represent it on the stack then we can avoid using
-                    // the `Display` implementation
-                    if let Some(primitive) = Primitive::try_from(v) {
-                        ValueInner::Primitive(primitive)
+                    if v.is_primitive() {
+                        ValueInner::Primitive(v)
                     } else {
                         ValueInner::Display(v)
                     }
@@ -112,7 +115,17 @@ impl<'a> serde::Serialize for Value<'a> {
             ValueInner::Serde(v) => v.serialize(serializer),
 
             #[cfg(not(feature = "erased-serde"))]
-            ValueInner::Primitive(v) => v.serialize(serializer),
+            ValueInner::Primitive(v) => {
+                use serde::ser::Error as SerError;
+
+                // We expect `Value::new` to correctly determine
+                // whether or not a value is a simple primitive
+                let v = v
+                    .to_primitive()
+                    .ok_or_else(|| S::Error::custom("captured value is not primitive"))?;
+
+                v.serialize(serializer)
+            },
         }
     }
 }

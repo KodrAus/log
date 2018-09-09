@@ -1,4 +1,7 @@
 //! Adapters for key values in the `log` macros.
+//! 
+//! Adapters are part of the `log` macro that allow values to be captured
+//! in different ways.
 
 pub mod map {
     //! Receivers for `#[log($adapter)]` attributes.

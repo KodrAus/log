@@ -1,7 +1,35 @@
-#[cfg(feature = "std")]
-use std::error;
+//! Primitive value capturing for nostd environments.
+//! 
+//! This module is a private implementation detail that's only
+//! included when `erased-serde` is not available.
+//! 
+//! This module is a simple wrapper around `serde::Serialize`
+//! for capturing simple primitive values. This lets us avoid
+//! using the `Display` implementation for values if they're
+//! a simple standard library primitive, like `bool` or `i32`.
+
 use std::fmt;
 use serde::ser::{Error, Serializer, Serialize, Impossible};
+
+/// Convert a value into a primitive with a known type.
+/// 
+/// The `ToPrimitive` trait lets us pass trait objects around
+/// that are always the same size, rather than bloating values
+/// to the size of the largest primitive.
+pub trait ToPrimitive {
+    fn is_primitive(&self) -> bool;
+    fn to_primitive(&self) -> Option<Primitive>;
+}
+
+impl<T> ToPrimitive for T where T: Serialize {
+    fn is_primitive(&self) -> bool {
+        Primitive::try_from(self).is_some()
+    }
+
+    fn to_primitive(&self) -> Option<Primitive> {
+        Primitive::try_from(self)
+    }
+}
 
 #[derive(Clone, Copy)]
 pub struct Primitive(PrimitiveInner);
@@ -22,7 +50,7 @@ enum PrimitiveInner {
 }
 
 impl Primitive {
-    pub fn try_from<T>(v: T) -> Option<Self>
+    fn try_from<T>(v: T) -> Option<Self>
     where
         T: Serialize,
     {
@@ -61,17 +89,6 @@ impl Error for Invalid {
         T: fmt::Display
     {
         Invalid
-    }
-}
-
-#[cfg(feature = "std")]
-impl error::Error for Invalid {
-    fn cause(&self) -> Option<&error::Error> {
-        None
-    }
-
-    fn description(&self) -> &str {
-        "invalid primitive"
     }
 }
 
