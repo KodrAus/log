@@ -77,7 +77,7 @@ impl<'a> Value<'a> {
                 #[cfg(not(feature = "erased-serde"))]
                 {
                     // Try capture a primitive value
-                    if v.is_primitive() {
+                    if v.to_primitive().is_some() {
                         ValueInner::Primitive(v)
                     } else {
                         ValueInner::Display(v)

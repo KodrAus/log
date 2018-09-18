@@ -17,15 +17,10 @@ use serde::ser::{Error, Serializer, Serialize, Impossible};
 /// that are always the same size, rather than bloating values
 /// to the size of the largest primitive.
 pub trait ToPrimitive {
-    fn is_primitive(&self) -> bool;
     fn to_primitive(&self) -> Option<Primitive>;
 }
 
 impl<T> ToPrimitive for T where T: Serialize {
-    fn is_primitive(&self) -> bool {
-        Primitive::try_from(self).is_some()
-    }
-
     fn to_primitive(&self) -> Option<Primitive> {
         Primitive::try_from(self)
     }
