@@ -720,7 +720,7 @@ impl LevelFilter {
 pub struct Record<'a> {
     header: Header<'a>,
     #[cfg(feature = "serde")]
-    kvs: RecordKeyValues<'a>,
+    kvs: RecordKeyValueSource<'a>,
 }
 
 #[derive(Clone, Debug)]
@@ -734,17 +734,17 @@ struct Header<'a> {
 
 /// A chain of key value pairs.
 #[derive(Clone)]
-struct RecordKeyValues<'a>(&'a dyn key_values::KeyValues);
+struct RecordKeyValueSource<'a>(&'a dyn key_values::KeyValueSource);
 
-impl<'a> fmt::Debug for RecordKeyValues<'a> {
+impl<'a> fmt::Debug for RecordKeyValueSource<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("KeyValues").finish()
+        f.debug_struct("KeyValueSource").finish()
     }
 }
 
-impl<'a> Default for RecordKeyValues<'a> {
+impl<'a> Default for RecordKeyValueSource<'a> {
     fn default() -> Self {
-        RecordKeyValues(&key_values::RawKeyValues(&[]))
+        RecordKeyValueSource(&key_values::RawKeyValueSource(&[]))
     }
 }
 
@@ -802,7 +802,7 @@ impl<'a> Record<'a> {
     /// Pairs aren't guaranteed to be unique (the same key may be repeated with different values).
     #[inline]
     #[cfg(feature = "serde")]
-    pub fn key_values(&self) -> &dyn key_values::KeyValues {
+    pub fn key_values(&self) -> &dyn key_values::KeyValueSource {
         &self.kvs.0
     }
 
@@ -943,8 +943,8 @@ impl<'a> RecordBuilder<'a> {
     /// Set key values
     #[inline]
     #[cfg(feature = "serde")]
-    pub fn key_values(&mut self, kvs: &'a dyn key_values::KeyValues) -> &mut RecordBuilder<'a> {
-        self.record.kvs = RecordKeyValues(kvs);
+    pub fn key_values(&mut self, kvs: &'a dyn key_values::KeyValueSource) -> &mut RecordBuilder<'a> {
+        self.record.kvs = RecordKeyValueSource(kvs);
         self
     }
 
@@ -1286,7 +1286,7 @@ pub fn __private_api_log(
     args: fmt::Arguments,
     level: Level,
     &(target, module_path, file, line): &(&str, &str, &str, u32),
-    kvs: &key_values::KeyValues
+    kvs: &key_values::KeyValueSource
 ) {
     logger().log(
         &Record::builder()
@@ -1474,7 +1474,7 @@ mod tests {
     #[test]
     fn test_record_builder() {
         use super::{MetadataBuilder, RecordBuilder};
-        use key_values::RawKeyValues;
+        use key_values::RawKeyValueSource;
         
         let target = "myApp";
         let metadata = MetadataBuilder::new().target(target).build();
@@ -1485,7 +1485,7 @@ mod tests {
             .module_path(Some("foo"))
             .file(Some("bar"))
             .line(Some(30))
-            .key_values(&RawKeyValues(&[("a", &"foo"), ("b", &1)]))
+            .key_values(&RawKeyValueSource(&[("a", &"foo"), ("b", &1)]))
             .build();
         assert_eq!(record_test.metadata().target(), "myApp");
         assert_eq!(record_test.module_path(), Some("foo"));

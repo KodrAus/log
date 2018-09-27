@@ -1,18 +1,11 @@
 //! Just a playground for some adapters
 
 use std::{
-    borrow::{
-        Cow,
-        Borrow,
-    },
     collections::BTreeMap,
 };
 
 use super::{
-    KeyValues,
-    KeyValue,
-    ToKey,
-    ToValue,
+    KeyValueSource,
     Visitor,
     Key,
     Value,
@@ -24,9 +17,9 @@ pub struct SortLast<KVS> {
     source: KVS,
 }
 
-impl<KVS> KeyValues for SortLast<KVS>
+impl<KVS> KeyValueSource for SortLast<KVS>
 where
-    KVS: KeyValues,
+    KVS: KeyValueSource,
 {
     fn visit<'kvs, 'vis>(&'kvs self, visitor: &'vis mut dyn Visitor<'kvs>) {
         // The `'kvs` lifetime allows us to capture keys and values.
