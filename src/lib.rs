@@ -271,8 +271,8 @@
     html_favicon_url = "https://www.rust-lang.org/favicon.ico",
     html_root_url = "https://docs.rs/log/0.4"
 )]
-#![warn(missing_docs)]
-#![deny(missing_debug_implementations)]
+// #![warn(missing_docs)]
+// #![deny(missing_debug_implementations)]
 #![cfg_attr(not(feature = "std"), no_std)]
 // When compiled for the rustc compiler itself we want to make sure that this is
 // an unstable crate
