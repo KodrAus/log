@@ -123,14 +123,14 @@ where
 }
 
 /// Serialize key values as a map.
-pub trait AsMap {
+pub trait IntoMap {
     /// Get a `Map` that can be serialized using `serde`.
-    fn as_map(&self) -> Map<&Self>;
+    fn into_map(self) -> Map<Self> where Self: Sized;
 }
 
-impl<KVS> AsMap for KVS where KVS: KeyValueSource {
-    fn as_map(&self) -> Map<&KVS> {
-        Map::new(&self)
+impl<KVS> IntoMap for KVS where KVS: KeyValueSource {
+    fn into_map(self) -> Map<KVS> {
+        Map::new(self)
     }
 }
 
