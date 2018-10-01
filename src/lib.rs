@@ -670,6 +670,8 @@ impl LevelFilter {
     }
 }
 
+pub use self::key_values::RecordKeyValueSource;
+
 /// The "payload" of a log message.
 ///
 /// # Use
@@ -732,22 +734,6 @@ struct Header<'a> {
     line: Option<u32>,
 }
 
-/// A chain of key value pairs.
-#[derive(Clone)]
-struct RecordKeyValueSource<'a>(&'a dyn key_values::KeyValueSource);
-
-impl<'a> fmt::Debug for RecordKeyValueSource<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("KeyValueSource").finish()
-    }
-}
-
-impl<'a> Default for RecordKeyValueSource<'a> {
-    fn default() -> Self {
-        RecordKeyValueSource(&key_values::RawKeyValueSource(&[]))
-    }
-}
-
 impl<'a> Record<'a> {
     /// Returns a new builder.
     #[inline]
@@ -802,8 +788,8 @@ impl<'a> Record<'a> {
     /// Pairs aren't guaranteed to be unique (the same key may be repeated with different values).
     #[inline]
     #[cfg(feature = "serde")]
-    pub fn key_values(&self) -> &dyn key_values::KeyValueSource {
-        &self.kvs.0
+    pub fn key_values(&self) -> RecordKeyValueSource {
+        self.kvs
     }
 
     /// Get a builder from this record.
@@ -943,8 +929,8 @@ impl<'a> RecordBuilder<'a> {
     /// Set key values
     #[inline]
     #[cfg(feature = "serde")]
-    pub fn key_values(&mut self, kvs: &'a dyn key_values::KeyValueSource) -> &mut RecordBuilder<'a> {
-        self.record.kvs = RecordKeyValueSource(kvs);
+    pub fn key_values(&mut self, kvs: &'a impl key_values::KeyValueSource) -> &mut RecordBuilder<'a> {
+        self.record.kvs = RecordKeyValueSource::erased(kvs);
         self
     }
 
@@ -1286,7 +1272,7 @@ pub fn __private_api_log(
     args: fmt::Arguments,
     level: Level,
     &(target, module_path, file, line): &(&str, &str, &str, u32),
-    kvs: &key_values::KeyValueSource
+    kvs: &key_values::RawKeyValueSource
 ) {
     logger().log(
         &Record::builder()

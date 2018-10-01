@@ -93,6 +93,17 @@ impl fmt::Display for Invalid {
     }
 }
 
+#[cfg(feature = "std")]
+impl std::error::Error for Invalid {
+    fn cause(&self) -> Option<&std::error::Error> {
+        None
+    }
+
+    fn description(&self) -> &str {
+        "invalid primitive"
+    }
+}
+
 impl Serializer for PrimitiveSerializer {
     type Ok = Primitive;
     type Error = Invalid;
