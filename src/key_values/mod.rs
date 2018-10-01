@@ -54,13 +54,21 @@ pub trait KeyValueSource {
     where
         V: Visitor<'kvs>;
 
+    /// An adapter to borrow self.
+    fn as_ref(&self) -> &Self {
+        self
+    }
+
     /// Chain two `KeyValueSource`s together.
-    fn chain<'a, 'b, KVS>(&'a self, other: &'b KVS) -> Chained<&'a Self, &'b KVS> {
+    fn chain<KVS>(self, other: KVS) -> Chained<Self, KVS>
+    where
+        Self: Sized,
+    {
         Chained(self, other)
     }
 
     /// Apply a function to each key-value pair.
-    fn try_for_each<F, E>(&self, f: F) -> Result<(), Error>
+    fn try_for_each<F, E>(self, f: F) -> Result<(), Error>
     where
         Self: Sized,
         F: FnMut(Key, Value) -> Result<(), E>,
@@ -85,7 +93,10 @@ pub trait KeyValueSource {
     /// 
     /// This method requires allocating a map to sort the keys.
     #[cfg(feature = "std")]
-    fn sort_retain_last(&self) -> SortRetainLast<&Self> {
+    fn sort_retain_last(self) -> SortRetainLast<Self>
+    where
+        Self: Sized,
+    {
         SortRetainLast(self)
     }
 }
