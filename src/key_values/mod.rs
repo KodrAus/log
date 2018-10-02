@@ -24,7 +24,8 @@ pub mod adapter;
 use std::collections;
 #[cfg(feature = "std")]
 use std::hash;
-use std::fmt;
+
+use serde::{Serialize, Serializer};
 
 pub use self::error::Error;
 pub use self::key::{Key, ToKey};
@@ -87,6 +88,14 @@ pub trait KeyValueSource {
         }
 
         self.visit(ForEach(f, Default::default()))
+    }
+
+    /// Serialize the key-value pairs as a map.
+    fn serialize_as_map(self) -> SerializeAsMap<Self>
+    where
+        Self: Sized,
+    {
+        SerializeAsMap(self)
     }
 
     /// Sort the inner key value pairs, retaining the last for each key.
@@ -153,6 +162,31 @@ where
         }
 
         Ok(())
+    }
+}
+
+/// Serialize the key-value pairs as a map.
+#[derive(Debug)]
+pub struct SerializeAsMap<KVS>(KVS);
+
+impl<KVS> Serialize for SerializeAsMap<KVS>
+where
+    KVS: KeyValueSource,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::SerializeMap;
+
+        let mut map = serializer.serialize_map(None)?;
+
+        self.0
+            .as_ref()
+            .try_for_each(|k, v| map.serialize_entry(&k, &v))
+            .map_err(Error::into_serde)?;
+
+        map.end()
     }
 }
 
@@ -237,70 +271,5 @@ where
         V: Visitor<'kvs>
     {
         (*self).visit(visitor)
-    }
-}
-
-/// A key value source used by the `log!` macros.
-#[doc(hidden)]
-pub struct RawKeyValueSource<'a>(pub &'a [(&'a str, &'a dyn ToValue)]);
-
-impl<'a> fmt::Debug for RawKeyValueSource<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("RawKeyValueSource").finish()
-    }
-}
-
-impl<'a> KeyValueSource for RawKeyValueSource<'a> {
-    fn visit<'kvs, V>(&'kvs self, visitor: V) -> Result<(), Error>
-    where
-        V: Visitor<'kvs>
-    {
-        self.0.visit(visitor)
-    }
-}
-
-/// A key value source on a `Record`.
-#[derive(Clone, Copy)]
-pub struct RecordKeyValueSource<'a>(&'a dyn ErasedKeyValueSource);
-
-impl<'a> RecordKeyValueSource<'a> {
-    pub(crate) fn erased(kvs: &'a impl KeyValueSource) -> Self {
-        RecordKeyValueSource(kvs)
-    }
-}
-
-impl<'a> fmt::Debug for RecordKeyValueSource<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("KeyValueSource").finish()
-    }
-}
-
-impl<'a> Default for RecordKeyValueSource<'a> {
-    fn default() -> Self {
-        RecordKeyValueSource(&RawKeyValueSource(&[]))
-    }
-}
-
-impl<'a> KeyValueSource for RecordKeyValueSource<'a> {
-    fn visit<'kvs, V>(&'kvs self, mut visitor: V) -> Result<(), Error>
-    where
-        V: Visitor<'kvs>
-    {
-        self.0.erased_visit(&mut visitor)
-    }
-}
-
-/// A trait that erases a `KeyValueSource` so it can be stored
-/// in a `Record` without requiring any generic parameters.
-trait ErasedKeyValueSource {
-    fn erased_visit<'kvs, 'vis>(&'kvs self, visitor: &'vis mut dyn Visitor<'kvs>) -> Result<(), Error>;
-}
-
-impl<KVS> ErasedKeyValueSource for KVS
-where
-    KVS: KeyValueSource + ?Sized,
-{
-    fn erased_visit<'kvs, 'vis>(&'kvs self, visitor: &'vis mut dyn Visitor<'kvs>) -> Result<(), Error> {
-        self.visit(visitor)
     }
 }

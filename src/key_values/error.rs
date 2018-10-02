@@ -1,5 +1,7 @@
 use std::fmt;
 
+use serde;
+
 #[cfg(feature = "std")]
 use std::error;
 
@@ -11,13 +13,19 @@ impl Error {
     }
 
     #[cfg(feature = "std")]
-    pub fn boxed(err: impl error::Error + Send + Sync + 'static) -> Self {
-        Error(Inner::Boxed(Box::new(err)))
+    pub fn as_error(&self) -> &(dyn error::Error + Send + Sync + 'static) {
+        &self.0
     }
 
-    #[cfg(feature = "std")]
-    fn as_error(&self) -> &(dyn error::Error + Send + Sync + 'static) {
-        &self.0
+    pub fn into_error(self) -> Box<dyn error::Error + Send + Sync> {
+        Box::new(self.0)
+    }
+
+    pub fn into_serde<E>(self) -> E
+    where
+        E: serde::ser::Error,
+    {
+        E::custom(self)
     }
 }
 
@@ -33,57 +41,6 @@ impl fmt::Display for Error {
     }
 }
 
-enum Inner {
-    Static(&'static str),
-    #[cfg(feature = "std")]
-    Owned(String),
-    #[cfg(feature = "std")]
-    Boxed(Box<dyn error::Error + Send + Sync>),
-}
-
-impl fmt::Debug for Inner {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Inner::Static(msg) => msg.fmt(f),
-            #[cfg(feature = "std")]
-            Inner::Owned(msg) => msg.fmt(f),
-            #[cfg(feature = "std")]
-            Inner::Boxed(err) => err.fmt(f),
-        }
-    }
-}
-
-impl fmt::Display for Inner {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Inner::Static(msg) => msg.fmt(f),
-            #[cfg(feature = "std")]
-            Inner::Owned(msg) => msg.fmt(f),
-            #[cfg(feature = "std")]
-            Inner::Boxed(err) => err.fmt(f),
-        }
-    }
-}
-
-#[cfg(feature = "std")]
-impl error::Error for Inner {
-    fn cause(&self) -> Option<&error::Error> {
-        match self {
-            Inner::Static(_) => None,
-            Inner::Owned(_) => None,
-            Inner::Boxed(err) => err.cause(),
-        }
-    }
-
-    fn description(&self) -> &str {
-        match self {
-            Inner::Static(msg) => msg,
-            Inner::Owned(msg) => msg,
-            Inner::Boxed(err) => err.description(),
-        }
-    }
-}
-
 #[cfg(feature = "std")]
 impl<E> From<E> for Error
 where
@@ -94,8 +51,51 @@ where
     }
 }
 
+#[cfg(feature = "std")]
+impl From<Error> for Box<dyn error::Error + Send + Sync> {
+    fn from(err: Error) -> Self {
+        err.into_error()
+    }
+}
+
 impl AsRef<dyn error::Error + Send + Sync + 'static> for Error {
     fn as_ref(&self) -> &(dyn error::Error + Send + Sync + 'static) {
         self.as_error()
+    }
+}
+
+enum Inner {
+    Static(&'static str),
+    #[cfg(feature = "std")]
+    Owned(String),
+}
+
+impl fmt::Debug for Inner {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Inner::Static(msg) => msg.fmt(f),
+            #[cfg(feature = "std")]
+            Inner::Owned(msg) => msg.fmt(f),
+        }
+    }
+}
+
+impl fmt::Display for Inner {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Inner::Static(msg) => msg.fmt(f),
+            #[cfg(feature = "std")]
+            Inner::Owned(msg) => msg.fmt(f),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl error::Error for Inner {
+    fn description(&self) -> &str {
+        match self {
+            Inner::Static(msg) => msg,
+            Inner::Owned(msg) => msg,
+        }
     }
 }
