@@ -17,6 +17,7 @@ impl Error {
         &self.0
     }
 
+    #[cfg(feature = "std")]
     pub fn into_error(self) -> Box<dyn error::Error + Send + Sync> {
         Box::new(self.0)
     }
