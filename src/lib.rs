@@ -672,19 +672,42 @@ impl LevelFilter {
 
 /// A key value source on a `Record`.
 #[derive(Clone, Copy)]
-struct KeyValues<'a>(&'a dyn key_values::KeyValueSource);
+pub struct KeyValues<'a>(&'a dyn ErasedKeyValueSource);
 
-const DEFAULT_KEYVALUES: &[(&str, &dyn key_values::ToValue)] = &[];
+impl<'a> KeyValues<'a> {
+    fn erased(kvs: &'a impl key_values::KeyValueSource) -> Self {
+        KeyValues(kvs)
+    }
 
-impl<'a> Default for KeyValues<'a> {
-    fn default() -> Self {
-        KeyValues(&DEFAULT_KEYVALUES)
+    fn empty() -> Self {
+        KeyValues(&(&[] as &[(&str, &dyn key_values::ToValue)]))
     }
 }
 
 impl<'a> fmt::Debug for KeyValues<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("KeyValueSource").finish()
+    }
+}
+
+impl<'a> key_values::KeyValueSource for KeyValues<'a> {
+    fn visit<'kvs>(&'kvs self, visitor: &mut key_values::Visitor<'kvs>) -> Result<(), key_values::Error> {
+        self.0.erased_visit(visitor)
+    }
+}
+
+/// A trait that erases a `KeyValueSource` so it can be stored
+/// in a `Record` without requiring any generic parameters.
+trait ErasedKeyValueSource {
+    fn erased_visit<'kvs>(&'kvs self, visitor: &mut dyn key_values::Visitor<'kvs>) -> Result<(), key_values::Error>;
+}
+
+impl<KVS> ErasedKeyValueSource for KVS
+where
+    KVS: key_values::KeyValueSource + ?Sized,
+{
+    fn erased_visit<'kvs>(&'kvs self, visitor: &mut dyn key_values::Visitor<'kvs>) -> Result<(), key_values::Error> {
+        self.visit(visitor)
     }
 }
 
@@ -804,8 +827,8 @@ impl<'a> Record<'a> {
     /// Pairs aren't guaranteed to be unique (the same key may be repeated with different values).
     #[inline]
     #[cfg(feature = "serde")]
-    pub fn key_values(&self) -> &dyn key_values::KeyValueSource {
-        &self.kvs.0
+    pub fn key_values(&self) -> KeyValues {
+        self.kvs
     }
 
     /// Get a builder from this record.
@@ -888,7 +911,7 @@ impl<'a> RecordBuilder<'a> {
                     line: None,
                 },
                 #[cfg(feature = "serde")]
-                kvs: Default::default()
+                kvs: KeyValues::empty()
             },
         }
     }
@@ -945,8 +968,8 @@ impl<'a> RecordBuilder<'a> {
     /// Set key values
     #[inline]
     #[cfg(feature = "serde")]
-    pub fn key_values(&mut self, kvs: &'a dyn key_values::KeyValueSource) -> &mut RecordBuilder<'a> {
-        self.record.kvs = KeyValues(kvs);
+    pub fn key_values(&mut self, kvs: &'a impl key_values::KeyValueSource) -> &mut RecordBuilder<'a> {
+        self.record.kvs = KeyValues::erased(kvs);
         self
     }
 

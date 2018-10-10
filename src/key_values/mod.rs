@@ -51,31 +51,25 @@ where
 /// A source for key value pairs that can be serialized.
 pub trait KeyValueSource {
     /// Serialize the key value pairs.
-    fn visit<'kvs>(&'kvs self, visitor: &mut Visitor<'kvs>) -> Result<(), Error>;
+    fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error>;
 
-    /// An adapter to erase self.
-    fn erase(&self) -> &dyn KeyValueSource
-    where
-        Self: Sized,
-    {
-        self
-    }
-}
-
-impl<'a> dyn KeyValueSource + 'a {
     /// An adapter to borrow self.
-    pub fn as_ref(&self) -> &Self {
+    fn as_ref(&self) -> &Self {
         self
     }
 
     /// Chain two `KeyValueSource`s together.
-    pub fn chain<KVS>(&self, other: KVS) -> Chained<&Self, KVS> {
+    fn chain<KVS>(self, other: KVS) -> Chained<Self, KVS>
+    where
+        Self: Sized,
+    {
         Chained(self, other)
     }
 
     /// Apply a function to each key-value pair.
-    pub fn try_for_each<F, E>(&self, f: F) -> Result<(), Error>
+    fn try_for_each<F, E>(self, f: F) -> Result<(), Error>
     where
+        Self: Sized,
         F: FnMut(Key, Value) -> Result<(), E>,
         E: Into<Error>,
     {
@@ -95,7 +89,10 @@ impl<'a> dyn KeyValueSource + 'a {
     }
 
     /// Serialize the key-value pairs as a map.
-    pub fn serialize_as_map(&self) -> SerializeAsMap<&Self> {
+    fn serialize_as_map(self) -> SerializeAsMap<Self>
+    where
+        Self: Sized,
+    {
         SerializeAsMap(self)
     }
 
@@ -103,7 +100,10 @@ impl<'a> dyn KeyValueSource + 'a {
     /// 
     /// This method requires allocating a map to sort the keys.
     #[cfg(feature = "std")]
-    fn sort_retain_last(&self) -> SortRetainLast<&Self> {
+    fn sort_retain_last(self) -> SortRetainLast<Self>
+    where
+        Self: Sized,
+    {
         SortRetainLast(self)
     }
 }
@@ -116,7 +116,7 @@ where
     A: KeyValueSource,
     B: KeyValueSource,
 {
-    fn visit<'kvs>(&'kvs self, visitor: &mut Visitor<'kvs>) -> Result<(), Error> {
+    fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error> {
         self.0.visit(visitor)?;
         self.1.visit(visitor)?;
 
@@ -133,7 +133,7 @@ impl<KVS> KeyValueSource for SortRetainLast<KVS>
 where
     KVS: KeyValueSource,
 {
-    fn visit<'kvs>(&'kvs self, visitor: &mut Visitor<'kvs>) -> Result<(), Error> {
+    fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error> {
         use std::collections::BTreeMap;
 
         struct Seen<'kvs>(BTreeMap<Key<'kvs>, Value<'kvs>>);
@@ -161,9 +161,9 @@ where
 #[derive(Debug)]
 pub struct SerializeAsMap<KVS>(KVS);
 
-impl<'a, KVS> Serialize for SerializeAsMap<KVS>
+impl<KVS> Serialize for SerializeAsMap<KVS>
 where
-    KVS: KeyValueSource + 'a,
+    KVS: KeyValueSource,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -174,9 +174,9 @@ where
         let mut map = serializer.serialize_map(None)?;
 
         self.0
-           .erase()
-           .try_for_each(|k, v| map.serialize_entry(&k, &v))
-           .map_err(Error::into_serde)?;
+            .as_ref()
+            .try_for_each(|k, v| map.serialize_entry(&k, &v))
+            .map_err(Error::into_serde)?;
 
         map.end()
     }
@@ -187,13 +187,14 @@ where
     K: ToKey,
     V: ToValue,
 {
-    fn visit<'kvs>(&'kvs self, visitor: &mut Visitor<'kvs>) -> Result<(), Error> {
+    fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error>
+    {
         visitor.visit_pair(self.0.to_key(), self.1.to_value())
     }
 }
 
-impl<KV> KeyValueSource for [KV] where KV: KeyValueSource {
-    fn visit<'kvs>(&'kvs self, visitor: &mut Visitor<'kvs>) -> Result<(), Error> {
+impl<KVS> KeyValueSource for [KVS] where KVS: KeyValueSource {
+    fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error> {
         for kv in self {
             kv.visit(visitor)?;
         }
@@ -203,8 +204,8 @@ impl<KV> KeyValueSource for [KV] where KV: KeyValueSource {
 }
 
 #[cfg(feature = "std")]
-impl<KV> KeyValueSource for Vec<KV> where KV: KeyValueSource {
-    fn visit<'kvs>(&'kvs self, visitor: &mut Visitor<'kvs>) -> Result<(), Error> {
+impl<KVS> KeyValueSource for Vec<KVS> where KVS: KeyValueSource {
+    fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error> {
         self.as_slice().visit(visitor)
     }
 }
@@ -215,7 +216,8 @@ where
     K: ToKey,
     V: ToValue,
 {
-    fn visit<'kvs>(&'kvs self, visitor: &mut Visitor<'kvs>) -> Result<(), Error> {
+    fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error>
+    {
         for (k, v) in self {
             visitor.visit_pair(k.to_key(), v.to_value())?;
         }
@@ -230,7 +232,8 @@ where
     K: ToKey + Eq + hash::Hash,
     V: ToValue,
 {
-    fn visit<'kvs>(&'kvs self, visitor: &mut Visitor<'kvs>) -> Result<(), Error> {
+    fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error>
+    {
         for (k, v) in self {
             visitor.visit_pair(k.to_key(), v.to_value())?;
         }
@@ -243,7 +246,7 @@ impl<'a, T: ?Sized> KeyValueSource for &'a T
 where
     T: KeyValueSource,
 {
-    fn visit<'kvs>(&'kvs self, visitor: &mut Visitor<'kvs>) -> Result<(), Error> {
+    fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error> {
         (*self).visit(visitor)
     }
 }
