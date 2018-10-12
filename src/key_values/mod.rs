@@ -20,10 +20,14 @@ mod error;
 
 pub mod adapter;
 
+use std::fmt;
+
 #[cfg(feature = "std")]
 use std::collections;
 #[cfg(feature = "std")]
 use std::hash;
+#[cfg(feature = "std")]
+use std::borrow;
 
 use serde::{Serialize, Serializer};
 
@@ -53,8 +57,48 @@ pub trait KeyValueSource {
     /// Serialize the key value pairs.
     fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error>;
 
+    /// Erase this `KeyValueSource` so it can be used without
+    /// requiring generic type parameters.
+    fn erase(&self) -> ErasedKeyValueSource
+    where
+        Self: Sized,
+    {
+        ErasedKeyValueSource::erased(self)
+    }
+
+    /// Find the value for a given key.
+    /// 
+    /// If the key is present multiple times, this method will
+    /// return the *last* value for the given key.
+    /// 
+    /// The default implementation will scan all key-value pairs.
+    /// Implementors are encouraged provide a more efficient version
+    /// if they can. Standard collections like `BTreeMap` and `HashMap`
+    /// will do an indexed lookup instead of a scan.
+    fn get<'kvs, Q>(&'kvs self, key: Q) -> Option<Value<'kvs>>
+    where
+        Q: ToKey,
+    {
+        struct Get<'k, 'v>(Key<'k>, Option<Value<'v>>);
+
+        impl<'k, 'kvs> Visitor<'kvs> for Get<'k, 'kvs> {
+            fn visit_pair(&mut self, k: Key<'kvs>, v: Value<'kvs>) -> Result<(), Error> {
+                if k == self.0 {
+                    self.1 = Some(v);
+                }
+
+                Ok(())
+            }
+        }
+
+        let mut visitor = Get(key.to_key(), None);
+        let _ = self.visit(&mut visitor);
+
+        visitor.1
+    }
+
     /// An adapter to borrow self.
-    fn as_ref(&self) -> &Self {
+    fn by_ref(&self) -> &Self {
         self
     }
 
@@ -174,7 +218,7 @@ where
         let mut map = serializer.serialize_map(None)?;
 
         self.0
-            .as_ref()
+            .by_ref()
             .try_for_each(|k, v| map.serialize_entry(&k, &v))
             .map_err(Error::into_serde)?;
 
@@ -213,32 +257,48 @@ impl<KVS> KeyValueSource for Vec<KVS> where KVS: KeyValueSource {
 #[cfg(feature = "std")]
 impl<K, V> KeyValueSource for collections::BTreeMap<K, V>
 where
-    K: ToKey,
+    K: borrow::Borrow<str> + Ord,
     V: ToValue,
 {
     fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error>
     {
         for (k, v) in self {
-            visitor.visit_pair(k.to_key(), v.to_value())?;
+            visitor.visit_pair(k.borrow().to_key(), v.to_value())?;
         }
 
         Ok(())
+    }
+
+    fn get<'kvs, Q>(&'kvs self, key: Q) -> Option<Value<'kvs>>
+    where
+        Q: ToKey,
+    {
+        let key = key.to_key();
+        collections::BTreeMap::get(self, key.as_ref()).map(|v| v.to_value())
     }
 }
 
 #[cfg(feature = "std")]
 impl<K, V> KeyValueSource for collections::HashMap<K, V>
 where
-    K: ToKey + Eq + hash::Hash,
+    K: borrow::Borrow<str> + Eq + hash::Hash,
     V: ToValue,
 {
     fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error>
     {
         for (k, v) in self {
-            visitor.visit_pair(k.to_key(), v.to_value())?;
+            visitor.visit_pair(k.borrow().to_key(), v.to_value())?;
         }
 
         Ok(())
+    }
+
+    fn get<'kvs, Q>(&'kvs self, key: Q) -> Option<Value<'kvs>>
+    where
+        Q: ToKey,
+    {
+        let key = key.to_key();
+        collections::HashMap::get(self, key.as_ref()).map(|v| v.to_value())
     }
 }
 
@@ -248,5 +308,66 @@ where
 {
     fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error> {
         (*self).visit(visitor)
+    }
+
+    fn get<'kvs, Q>(&'kvs self, key: Q) -> Option<Value<'kvs>>
+    where
+        Q: ToKey,
+    {
+        (*self).get(key)
+    }
+}
+
+/// A key value source on a `Record`.
+#[derive(Clone, Copy)]
+pub struct ErasedKeyValueSource<'a>(&'a dyn ErasedKeyValueSourceBridge);
+
+impl<'a> ErasedKeyValueSource<'a> {
+    pub fn erased(kvs: &'a impl KeyValueSource) -> Self {
+        ErasedKeyValueSource(kvs)
+    }
+
+    pub fn empty() -> Self {
+        ErasedKeyValueSource(&(&[] as &[(&str, &dyn ToValue)]))
+    }
+}
+
+impl<'a> fmt::Debug for ErasedKeyValueSource<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("KeyValueSource").finish()
+    }
+}
+
+impl<'a> KeyValueSource for ErasedKeyValueSource<'a> {
+    fn visit<'kvs>(&'kvs self, visitor: &mut Visitor<'kvs>) -> Result<(), Error> {
+        self.0.erased_visit(visitor)
+    }
+
+    fn get<'kvs, Q>(&'kvs self, key: Q) -> Option<Value<'kvs>>
+    where
+        Q: ToKey,
+    {
+        let key = key.to_key();
+        self.0.erased_get(key.as_ref())
+    }
+}
+
+/// A trait that erases a `KeyValueSource` so it can be stored
+/// in a `Record` without requiring any generic parameters.
+trait ErasedKeyValueSourceBridge {
+    fn erased_visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error>;
+    fn erased_get<'kvs>(&'kvs self, key: &str) -> Option<Value<'kvs>>;
+}
+
+impl<KVS> ErasedKeyValueSourceBridge for KVS
+where
+    KVS: KeyValueSource + ?Sized,
+{
+    fn erased_visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error> {
+        self.visit(visitor)
+    }
+
+    fn erased_get<'kvs>(&'kvs self, key: &str) -> Option<Value<'kvs>> {
+        self.get(key)
     }
 }

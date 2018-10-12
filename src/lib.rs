@@ -308,6 +308,8 @@ mod serde_support;
 #[macro_use]
 pub mod key_values;
 
+use self::key_values::{KeyValueSource, ErasedKeyValueSource};
+
 // The LOGGER static holds a pointer to the global logger. It is protected by
 // the STATE static which determines whether LOGGER has been initialized yet.
 static mut LOGGER: &'static Log = &NopLogger;
@@ -670,47 +672,6 @@ impl LevelFilter {
     }
 }
 
-/// A key value source on a `Record`.
-#[derive(Clone, Copy)]
-pub struct KeyValues<'a>(&'a dyn ErasedKeyValueSource);
-
-impl<'a> KeyValues<'a> {
-    fn erased(kvs: &'a impl key_values::KeyValueSource) -> Self {
-        KeyValues(kvs)
-    }
-
-    fn empty() -> Self {
-        KeyValues(&(&[] as &[(&str, &dyn key_values::ToValue)]))
-    }
-}
-
-impl<'a> fmt::Debug for KeyValues<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("KeyValueSource").finish()
-    }
-}
-
-impl<'a> key_values::KeyValueSource for KeyValues<'a> {
-    fn visit<'kvs>(&'kvs self, visitor: &mut key_values::Visitor<'kvs>) -> Result<(), key_values::Error> {
-        self.0.erased_visit(visitor)
-    }
-}
-
-/// A trait that erases a `KeyValueSource` so it can be stored
-/// in a `Record` without requiring any generic parameters.
-trait ErasedKeyValueSource {
-    fn erased_visit<'kvs>(&'kvs self, visitor: &mut dyn key_values::Visitor<'kvs>) -> Result<(), key_values::Error>;
-}
-
-impl<KVS> ErasedKeyValueSource for KVS
-where
-    KVS: key_values::KeyValueSource + ?Sized,
-{
-    fn erased_visit<'kvs>(&'kvs self, visitor: &mut dyn key_values::Visitor<'kvs>) -> Result<(), key_values::Error> {
-        self.visit(visitor)
-    }
-}
-
 /// The "payload" of a log message.
 ///
 /// # Use
@@ -761,7 +722,7 @@ where
 pub struct Record<'a> {
     header: Header<'a>,
     #[cfg(feature = "serde")]
-    kvs: KeyValues<'a>,
+    kvs: ErasedKeyValueSource<'a>,
 }
 
 #[derive(Clone, Debug)]
@@ -827,7 +788,7 @@ impl<'a> Record<'a> {
     /// Pairs aren't guaranteed to be unique (the same key may be repeated with different values).
     #[inline]
     #[cfg(feature = "serde")]
-    pub fn key_values(&self) -> KeyValues {
+    pub fn key_values(&self) -> ErasedKeyValueSource {
         self.kvs
     }
 
@@ -911,7 +872,7 @@ impl<'a> RecordBuilder<'a> {
                     line: None,
                 },
                 #[cfg(feature = "serde")]
-                kvs: KeyValues::empty()
+                kvs: ErasedKeyValueSource::empty()
             },
         }
     }
@@ -968,8 +929,8 @@ impl<'a> RecordBuilder<'a> {
     /// Set key values
     #[inline]
     #[cfg(feature = "serde")]
-    pub fn key_values(&mut self, kvs: &'a impl key_values::KeyValueSource) -> &mut RecordBuilder<'a> {
-        self.record.kvs = KeyValues::erased(kvs);
+    pub fn key_values(&mut self, kvs: ErasedKeyValueSource<'a>) -> &mut RecordBuilder<'a> {
+        self.record.kvs = kvs;
         self
     }
 
@@ -1321,7 +1282,7 @@ pub fn __private_api_log(
             .module_path(Some(module_path))
             .file(Some(file))
             .line(Some(line))
-            .key_values(&kvs)
+            .key_values((&kvs).erase())
             .build(),
     );
 }
