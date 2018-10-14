@@ -319,7 +319,7 @@ where
 }
 
 /// A key value source on a `Record`.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct ErasedKeyValueSource<'a>(&'a dyn ErasedKeyValueSourceBridge);
 
 impl<'a> ErasedKeyValueSource<'a> {

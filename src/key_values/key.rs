@@ -8,7 +8,7 @@ use std::fmt;
 use std::borrow;
 use serde;
 
-/// Converting into a `Key`.
+/// A type that can be converted into a borrowed key.
 pub trait ToKey {
     /// Perform the conversion.
     fn to_key(&self) -> Key;

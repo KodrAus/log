@@ -789,7 +789,7 @@ impl<'a> Record<'a> {
     #[inline]
     #[cfg(feature = "serde")]
     pub fn key_values(&self) -> ErasedKeyValueSource {
-        self.kvs
+        self.kvs.clone()
     }
 
     /// Get a builder from this record.

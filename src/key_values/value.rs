@@ -12,7 +12,7 @@ use erased_serde;
 #[cfg(not(feature = "erased-serde"))]
 use super::primitive::ToPrimitive;
 
-/// Converting into a `Value`.
+/// A type that can be converted into a borrowed value.
 pub trait ToValue {
     /// Perform the conversion.
     fn to_value(&self) -> Value;
