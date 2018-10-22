@@ -1,5 +1,6 @@
 use std::fmt;
 use std::cmp::Ordering;
+use std::hash::{Hash, Hasher};
 
 /// The key in a key-value pair.
 pub trait Key {
@@ -47,6 +48,15 @@ impl<'a> fmt::Display for &'a dyn Key {
     }
 }
 
+impl<'a> Hash for &'a dyn Key {
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: Hasher,
+    {
+        self.to_str().hash(state)
+    }
+}
+
 impl Key for str {
     fn to_str(&self) -> &str {
         self
@@ -75,17 +85,6 @@ pub use self::serde_support::*;
 #[cfg(feature = "std")]
 mod std_support {
     use super::*;
-
-    use std::hash::{Hash, Hasher};
-
-    impl<'a> Hash for &'a dyn Key {
-        fn hash<H>(&self, state: &mut H)
-        where
-            H: Hasher,
-        {
-            self.to_str().hash(state)
-        }
-    }
 
     impl Key for String {
         fn to_str(&self) -> &str {
