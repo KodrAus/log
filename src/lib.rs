@@ -306,7 +306,7 @@ mod serde_support;
 #[macro_use]
 pub mod key_values;
 
-use self::key_values::{Source, ErasedSource};
+use self::key_values::source::{Source, ErasedSource};
 
 // The LOGGER static holds a pointer to the global logger. It is protected by
 // the STATE static which determines whether LOGGER has been initialized yet.

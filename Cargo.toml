@@ -49,5 +49,6 @@ cfg-if = "0.1.2"
 serde = { version = "1.0", default-features = false, optional = true }
 erased-serde = { version = "0.3.6", default-features = false, optional = true }
 
-# [dev-dependencies]
-# serde_test = "1.0"
+[dev-dependencies]
+serde_test = "1.0"
+serde_json = "1.0"
