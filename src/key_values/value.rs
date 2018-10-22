@@ -225,6 +225,8 @@ ensure_impl_visit! {
     }
 }
 
+impl EnsureValue for dyn Value {}
+
 #[cfg(not(feature = "structured_serde"))]
 mod visit_imp {
     use super::*;
