@@ -6,20 +6,21 @@ mod macros;
 use std::fmt;
 use std::borrow::Borrow;
 use std::marker::PhantomData;
+use std::cmp::Ordering;
 
 /// A visitor for key value pairs.
 /// 
 /// The lifetime of the keys and values is captured by the `'kvs` type.
 pub trait SourceVisitor<'kvs> {
     /// Visit a key value pair.
-    fn visit_pair(&mut self, k: Key<'kvs>, v: Value<'kvs>) -> Result<(), Error>;
+    fn visit_pair(&mut self, k: &'kvs dyn Key, v: &'kvs dyn Value) -> Result<(), Error>;
 }
 
 impl<'a, 'kvs, T: ?Sized> SourceVisitor<'kvs> for &'a mut T
 where
     T: SourceVisitor<'kvs>,
 {
-    fn visit_pair(&mut self, k: Key<'kvs>, v: Value<'kvs>) -> Result<(), Error> {
+    fn visit_pair(&mut self, k: &'kvs dyn Key, v: &'kvs dyn Value) -> Result<(), Error> {
         (*self).visit_pair(k, v)
     }
 }
@@ -47,14 +48,14 @@ pub trait Source {
     /// Implementors are encouraged provide a more efficient version
     /// if they can. Standard collections like `BTreeMap` and `HashMap`
     /// will do an indexed lookup instead of a scan.
-    fn get<'kvs, Q>(&'kvs self, key: Q) -> Option<Value<'kvs>>
+    fn get<'kvs, Q>(&'kvs self, key: Q) -> Option<&'kvs dyn Value>
     where
-        Q: Borrow<str>,
+        Q: Key,
     {
-        struct Get<'k, 'v>(Key<'k>, Option<Value<'v>>);
+        struct Get<'k, 'v>(&'k dyn Key, Option<&'v dyn Value>);
 
         impl<'k, 'kvs> SourceVisitor<'kvs> for Get<'k, 'kvs> {
-            fn visit_pair(&mut self, k: Key<'kvs>, v: Value<'kvs>) -> Result<(), Error> {
+            fn visit_pair(&mut self, k: &'kvs dyn Key, v: &'kvs dyn Value) -> Result<(), Error> {
                 if k == self.0 {
                     self.1 = Some(v);
                 }
@@ -63,7 +64,7 @@ pub trait Source {
             }
         }
 
-        let mut visitor = Get(key.borrow().into(), None);
+        let mut visitor = Get(&key, None);
         let _ = self.visit(&mut visitor);
 
         visitor.1
@@ -86,17 +87,17 @@ pub trait Source {
     fn try_for_each<F, E>(self, f: F) -> Result<(), Error>
     where
         Self: Sized,
-        F: FnMut(Key, Value) -> Result<(), E>,
+        F: FnMut(&dyn Key, &dyn Value) -> Result<(), E>,
         E: Into<Error>,
     {
         struct ForEach<F, E>(F, PhantomData<E>);
 
         impl<'kvs, F, E> SourceVisitor<'kvs> for ForEach<F, E>
         where
-            F: FnMut(Key, Value) -> Result<(), E>,
+            F: FnMut(&dyn Key, &dyn Value) -> Result<(), E>,
             E: Into<Error>,
         {
-            fn visit_pair(&mut self, k: Key<'kvs>, v: Value<'kvs>) -> Result<(), Error> {
+            fn visit_pair(&mut self, k: &'kvs dyn Key, v: &'kvs dyn Value) -> Result<(), Error> {
                 (self.0)(k, v).map_err(Into::into)
             }
         }
@@ -122,9 +123,9 @@ where
         (*self).visit(visitor)
     }
 
-    fn get<'kvs, Q>(&'kvs self, key: Q) -> Option<Value<'kvs>>
+    fn get<'kvs, Q>(&'kvs self, key: Q) -> Option<&'kvs dyn Value>
     where
-        Q: Borrow<str>,
+        Q: Key,
     {
         (*self).get(key)
     }
@@ -154,12 +155,12 @@ pub struct SerializeAsMap<KVS>(KVS);
 
 impl<K, V> Source for (K, V)
 where
-    K: Borrow<str>,
-    V: Visit,
+    K: Key,
+    V: Value,
 {
     fn visit<'kvs>(&'kvs self, visitor: &mut dyn SourceVisitor<'kvs>) -> Result<(), Error>
     {
-        visitor.visit_pair(Key::from_str(&self.0), Value::from_visit(&self.1))
+        visitor.visit_pair(&self.0, &self.1)
     }
 }
 
@@ -183,7 +184,7 @@ impl<'a> ErasedSource<'a> {
     }
 
     pub fn empty() -> Self {
-        ErasedSource(&(&[] as &[(&str, &dyn Visit)]))
+        ErasedSource(&(&[] as &[(&str, &dyn Value)]))
     }
 }
 
@@ -198,11 +199,11 @@ impl<'a> Source for ErasedSource<'a> {
         self.0.erased_visit(visitor)
     }
 
-    fn get<'kvs, Q>(&'kvs self, key: Q) -> Option<Value<'kvs>>
+    fn get<'kvs, Q>(&'kvs self, key: Q) -> Option<&'kvs dyn Value>
     where
-        Q: Borrow<str>,
+        Q: Key,
     {
-        self.0.erased_get(key.borrow())
+        self.0.erased_get(&key)
     }
 }
 
@@ -210,7 +211,7 @@ impl<'a> Source for ErasedSource<'a> {
 /// in a `Record` without requiring any generic parameters.
 trait ErasedSourceBridge {
     fn erased_visit<'kvs>(&'kvs self, visitor: &mut dyn SourceVisitor<'kvs>) -> Result<(), Error>;
-    fn erased_get<'kvs>(&'kvs self, key: &str) -> Option<Value<'kvs>>;
+    fn erased_get<'kvs>(&'kvs self, key: &dyn Key) -> Option<&'kvs dyn Value>;
 }
 
 impl<KVS> ErasedSourceBridge for KVS
@@ -221,7 +222,7 @@ where
         self.visit(visitor)
     }
 
-    fn erased_get<'kvs>(&'kvs self, key: &str) -> Option<Value<'kvs>> {
+    fn erased_get<'kvs>(&'kvs self, key: &dyn Key) -> Option<&'kvs dyn Value> {
         self.get(key)
     }
 }
@@ -274,96 +275,79 @@ impl fmt::Display for ErrorInner {
     }
 }
 
-/// A single property key.
-#[derive(PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Key<'kvs> {
-    inner: &'kvs str,
+pub trait Key {
+    fn to_str(&self) -> &str;
 }
 
-impl<'kvs> Key<'kvs> {
-    /// Get a `Key` from a borrowed string.
-    pub fn from_str(key: &'kvs (impl Borrow<str> + ?Sized)) -> Self {
-        Key {
-            inner: key.borrow(),
-        }
-    }
-
-    /// Get a borrowed string from a `Key`.
-    pub fn as_str(&self) -> &str {
-        &self.inner
+impl<'a, T: ?Sized> Key for &'a T
+where
+    T: Key,
+{
+    fn to_str(&self) -> &str {
+        (**self).to_str()
     }
 }
 
-impl<'kvs> From<&'kvs str> for Key<'kvs> {
-    fn from(k: &'kvs str) -> Self {
-        Key { inner: k }
+impl<'a> PartialEq for &'a dyn Key {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_str().eq(other.to_str())
     }
 }
 
-impl<'kvs> AsRef<str> for Key<'kvs> {
-    fn as_ref(&self) -> &str {
-        self.as_str()
+impl<'a> Eq for &'a dyn Key { }
+
+impl<'a> PartialOrd for &'a dyn Key {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.to_str().partial_cmp(other.to_str())
     }
 }
 
-impl<'kvs> Borrow<str> for Key<'kvs> {
-    fn borrow(&self) -> &str {
-        self.as_str()
+impl<'a> Ord for &'a dyn Key {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.to_str().cmp(other.to_str())
     }
 }
 
-impl<'kvs> fmt::Display for Key<'kvs> {
+impl<'a> fmt::Debug for &'a dyn Key {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.inner.fmt(f)
+        self.to_str().fmt(f)
     }
 }
 
-impl<'kvs> fmt::Debug for Key<'kvs> {
+impl<'a> fmt::Display for &'a dyn Key {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.inner.fmt(f)
+        self.to_str().fmt(f)
     }
 }
 
-/// A single property value.
+impl Key for str {
+    fn to_str(&self) -> &str {
+        self
+    }
+}
+
+/// A value that can be serialized.
 /// 
-/// Values borrow their underlying data and implement `serde::Serialize`.
-pub struct Value<'kvs> {
-    inner: ValueInner<'kvs>,
-}
-
-#[derive(Clone, Copy)]
-enum ValueInner<'kvs> {
-    Visit(&'kvs dyn Visit),
-    Debug(&'kvs dyn fmt::Debug),
-}
-
-impl<'kvs> Value<'kvs> {
-    /// Get a value from a visitable reference.
-    pub fn from_visit(v: &'kvs impl Visit) -> Self {
-        Value {
-            inner: ValueInner::Visit(v)
-        }
-    }
-
-    /// Get a `Value` from a debuggable reference.
-    pub fn from_debug(v: &'kvs impl fmt::Debug) -> Self {
-        Value {
-            inner: ValueInner::Debug(v),
-        }
-    }
-}
-
-impl<'kvs> fmt::Debug for Value<'kvs> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.inner {
-            ValueInner::Debug(v) => v.fmt(f),
-            ValueInner::Visit(v) => v.fmt(f),
-        }
-    }
+/// **This trait cannot be implemented manually**
+/// 
+/// The `Visit` trait is always implemented for a fixed set of primitives:
+/// 
+/// - Primitives: `bool`, `char`
+/// - Unsigned integers: `u8`, `u16`, `u32`, `u64`, `u128`
+/// - Signed integers: `i8`, `i16`, `i32`, `i64`, `i128`
+/// - Strings: `&str`, `String`
+/// - Bytes: `&[u8]`, `Vec<u8>`
+/// 
+/// Any other type that implements `serde::Serialize + std::fmt::Debug` will
+/// automatically implement `Visit` if the `structured_serde` feature is
+/// enabled.
+pub trait Value: visit_imp::ValuePrivate {
+    /// Visit the value with the given serializer.
+    fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error>;
 }
 
 /// A serializer for primitive values.
-pub trait Visitor {
+pub trait ValueVisitor {
     /// Visit a signed integer.
     fn visit_i64(&mut self, v: i64) -> Result<(), Error> {
         self.visit_fmt(&format_args!("{:?}", v))
@@ -404,17 +388,41 @@ pub trait Visitor {
     fn visit_fmt(&mut self, args: &fmt::Arguments) -> Result<(), Error>;
 }
 
-/// A value that can be serialized.
-/// 
-/// This type is expected to be used as a trait object, like `&dyn Visit`
-/// instead of as a generic, like `T: Visit`. It is only implemented for
-/// a selection of primitive types and cannot be implemented manually.
-/// 
-/// If the `structured_serde` feature is enabled, this type can be serialized
-/// using `serde` in addition to the simple `Visitor` from this crate.
-pub trait Visit: visit_imp::VisitPrivate {
-    /// Visit the value with the given serializer.
-    fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error>;
+impl<'a, T: ?Sized> ValueVisitor for &'a mut T
+where
+    T: ValueVisitor,
+{
+    fn visit_i64(&mut self, v: i64) -> Result<(), Error> {
+        (**self).visit_i64(v)
+    }
+
+    fn visit_u64(&mut self, v: u64) -> Result<(), Error> {
+        (**self).visit_u64(v)
+    }
+
+    fn visit_f64(&mut self, v: f64) -> Result<(), Error> {
+        (**self).visit_f64(v)
+    }
+
+    fn visit_bool(&mut self, v: bool) -> Result<(), Error> {
+        (**self).visit_bool(v)
+    }
+
+    fn visit_char(&mut self, v: char) -> Result<(), Error> {
+        (**self).visit_char(v)
+    }
+
+    fn visit_str(&mut self, v: &str) -> Result<(), Error> {
+        (**self).visit_str(v)
+    }
+
+    fn visit_bytes(&mut self, v: &[u8]) -> Result<(), Error> {
+        (**self).visit_bytes(v)
+    }
+
+    fn visit_fmt(&mut self, args: &fmt::Arguments) -> Result<(), Error> {
+        (**self).visit_fmt(args)
+    }
 }
 
 /// This trait is a private implementation detail for testing.
@@ -422,128 +430,111 @@ pub trait Visit: visit_imp::VisitPrivate {
 /// All it does is make sure that our set of concrete types
 /// that implement `Visit` always implement the `Visit` trait,
 /// regardless of crate features and blanket implementations.
-trait EnsureVisit: Visit {}
+trait EnsureValue: Value {}
 
 macro_rules! ensure_impl_visit {
     ($(<$($params:tt),*> $ty:ty { $($serialize:tt)* })*) => {
         $(
-            impl<$($params),*> EnsureVisit for $ty {}
-            impl<'a, $($params),*> EnsureVisit for &'a $ty {}
+            impl<$($params),*> EnsureValue for $ty {}
+            impl<'a, $($params),*> EnsureValue for &'a $ty {}
 
             #[cfg(not(feature = "structured_serde"))]
-            impl<$($params),*> Visit for $ty {
+            impl<$($params),*> Value for $ty {
                 $($serialize)*
             }
 
             #[cfg(not(feature = "structured_serde"))]
-            impl<$($params),*> visit_imp::VisitPrivate for $ty {}
+            impl<$($params),*> visit_imp::ValuePrivate for $ty {}
         )*
     };
     ($($ty:ty { $($serialize:tt)* })*) => {
         $(
-            impl EnsureVisit for $ty {}
-            impl<'a> EnsureVisit for &'a $ty {}
+            impl EnsureValue for $ty {}
+            impl<'a> EnsureValue for &'a $ty {}
 
             #[cfg(not(feature = "structured_serde"))]
-            impl Visit for $ty {
+            impl Value for $ty {
                 $($serialize)*
             }
 
             #[cfg(not(feature = "structured_serde"))]
-            impl visit_imp::VisitPrivate for $ty {}
+            impl visit_imp::ValuePrivate for $ty {}
         )*
     }
 }
 
 ensure_impl_visit! {
     u8 {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
             visitor.visit_u64(*self as u64)
         }
     }
     u16 {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
             visitor.visit_u64(*self as u64)
         }
     }
     u32 {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
             visitor.visit_u64(*self as u64)
         }
     }
     u64 {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
             visitor.visit_u64(*self)
         }
     }
 
     i8 {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
             visitor.visit_i64(*self as i64)
         }
     }
     i16 {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
             visitor.visit_i64(*self as i64)
         }
     }
     i32 {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
             visitor.visit_i64(*self as i64)
         }
     }
     i64 {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
             visitor.visit_i64(*self)
         }
     }
 
     f32 {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
             visitor.visit_f64(*self as f64)
         }
     }
     f64 {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
             visitor.visit_f64(*self)
         }
     }
 
     char {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
             visitor.visit_char(*self)
         }
     }
     bool {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
             visitor.visit_bool(*self)
         }
     }
     str {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
             visitor.visit_str(self)
         }
     }
     [u8] {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
             visitor.visit_bytes(self)
-        }
-    }
-}
-
-ensure_impl_visit! {
-    <'kvs> Key<'kvs> {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            self.as_str().visit(visitor)
-        }
-    }
-
-    <'kvs> Value<'kvs> {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            match self.inner {
-                ValueInner::Debug(v) => visitor.visit_fmt(&format_args!("{:?}", v)),
-                ValueInner::Visit(v) => v.visit(visitor),
-            }
         }
     }
 }
@@ -553,20 +544,20 @@ mod visit_imp {
     use super::*;
 
     #[doc(hidden)]
-    pub trait VisitPrivate: fmt::Debug {}
+    pub trait ValuePrivate: fmt::Debug {}
 
-    impl<'a, T: ?Sized> Visit for &'a T
+    impl<'a, T: ?Sized> Value for &'a T
     where
-        T: Visit,
+        T: Value,
     {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
             (**self).visit(visitor)
         }
     }
 
-    impl<'a, T: ?Sized> VisitPrivate for &'a T
+    impl<'a, T: ?Sized> ValuePrivate for &'a T
     where
-        T: Visit,
+        T: Value,
     {
     }
 }
@@ -579,13 +570,13 @@ mod visit_imp {
     use serde::{Serialize, Serializer};
 
     #[doc(hidden)]
-    pub trait VisitPrivate: erased_serde::Serialize + fmt::Debug {}
+    pub trait ValuePrivate: erased_serde::Serialize + fmt::Debug {}
  
-    impl<T: ?Sized> Visit for T
+    impl<T: ?Sized> Value for T
     where
         T: Serialize + fmt::Debug,
     {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
             match Serialize::serialize(self, SerdeBridge(visitor)) {
                 Err(SerdeError::Unsupported) => visitor.visit_fmt(&format_args!("{:?}", self)),
                 Err(SerdeError::Other(e)) => Err(e),
@@ -594,22 +585,13 @@ mod visit_imp {
         }
     }
 
-    impl<T: ?Sized> VisitPrivate for T
+    impl<T: ?Sized> ValuePrivate for T
     where
         T: Serialize + fmt::Debug,
     {
     }
 
-    impl<'a> Serialize for dyn Visit + 'a {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            erased_serde::serialize(self, serializer)
-        }
-    }
-
-    struct SerdeBridge<'a>(&'a mut dyn Visitor);
+    struct SerdeBridge<'a>(&'a mut dyn ValueVisitor);
 
     #[derive(Debug)]
     enum SerdeError {
@@ -843,24 +825,21 @@ mod serde_support {
         }
     }
 
-    impl<'kvs> Serialize for Key<'kvs> {
+    impl<'a> Serialize for dyn Key + 'a {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
         {
-            serializer.serialize_str(self.inner)
+            self.to_str().serialize(serializer)
         }
     }
 
-    impl<'kvs> Serialize for Value<'kvs> {
+    impl<'a> Serialize for dyn Value + 'a {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
         {
-            match self.inner {
-                ValueInner::Debug(v) => serializer.collect_str(&format_args!("{:?}", v)),
-                ValueInner::Visit(v) => v.serialize(serializer),
-            }
+            erased_serde::serialize(self, serializer)
         }
     }
 
@@ -893,57 +872,56 @@ mod std_support {
 
     impl<K, V> Source for BTreeMap<K, V>
     where
-        K: Borrow<str> + Ord,
-        V: Visit,
+        K: Key + Borrow<str> + Ord,
+        V: Value,
     {
         fn visit<'kvs>(&'kvs self, visitor: &mut dyn SourceVisitor<'kvs>) -> Result<(), Error>
         {
             for (k, v) in self {
-                visitor.visit_pair(Key::from_str(k), Value::from_visit(v))?;
+                visitor.visit_pair(&*k, &*v)?;
             }
 
             Ok(())
         }
 
-        fn get<'kvs, Q>(&'kvs self, key: Q) -> Option<Value<'kvs>>
+        fn get<'kvs, Q>(&'kvs self, key: Q) -> Option<&'kvs dyn Value>
         where
-            Q: Borrow<str>,
+            Q: Key,
         {
-            let key = key.borrow();
-            BTreeMap::get(self, key).map(|v| Value::from_visit(v))
+            BTreeMap::get(self, key.to_str()).map(|v| v as &dyn Value)
         }
     }
 
     impl<K, V> Source for HashMap<K, V>
     where
-        K: Borrow<str> + Eq + Hash,
-        V: Visit,
+        K: Key + Borrow<str> + Eq + Hash,
+        V: Value,
     {
         fn visit<'kvs>(&'kvs self, visitor: &mut dyn SourceVisitor<'kvs>) -> Result<(), Error>
         {
             for (k, v) in self {
-                visitor.visit_pair(Key::from_str(k), Value::from_visit(v))?;
+                visitor.visit_pair(&*k, &*v)?;
             }
 
             Ok(())
         }
 
-        fn get<'kvs, Q>(&'kvs self, key: Q) -> Option<Value<'kvs>>
+        fn get<'kvs, Q>(&'kvs self, key: Q) -> Option<&'kvs dyn Value>
         where
-            Q: Borrow<str>,
+            Q: Key,
         {
-            HashMap::get(self, key.borrow()).map(|v| Value::from_visit(v))
+            HashMap::get(self, key.to_str()).map(|v| v as &dyn Value)
         }
     }
 
     ensure_impl_visit! {
         String {
-            fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+            fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
                 visitor.visit_str(&*self)
             }
         }
         Vec<u8> {
-            fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+            fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
                 visitor.visit_bytes(&*self)
             }
         }
@@ -1010,10 +988,10 @@ mod tests {
     }
 
     // `&dyn ser::Serialize` should impl `Serialize`
-    fn assert_visit(v: &dyn Visit, token: Token) {
+    fn assert_visit(v: &dyn Value, token: Token) {
         struct TestVisitor<'a>(Token<'a>);
 
-        impl<'a> Visitor for TestVisitor<'a> {
+        impl<'a> ValueVisitor for TestVisitor<'a> {
             fn visit_i64(&mut self, v: i64) {
                 assert_eq!(self.0, Token::I64(v));
             }
@@ -1048,14 +1026,14 @@ mod tests {
 
                 const LEN: usize = 128;
 
-                struct VisitArgs {
+                struct ValueArgs {
                     buf: [u8; LEN],
                     cursor: usize,
                 }
 
-                impl VisitArgs {
+                impl ValueArgs {
                     fn new() -> Self {
-                        VisitArgs {
+                        ValueArgs {
                             buf: [0; LEN],
                             cursor: 0,
                         }
@@ -1066,7 +1044,7 @@ mod tests {
                     }
                 }
 
-                impl Write for VisitArgs {
+                impl Write for ValueArgs {
                     fn write_str(&mut self, s: &str) -> fmt::Result {
                         let src = s.as_bytes();
                         let next_cursor = self.cursor + src.len();
@@ -1088,7 +1066,7 @@ mod tests {
                     }
                 }
 
-                let mut w = VisitArgs::new();
+                let mut w = ValueArgs::new();
                 w.write_fmt(format_args!("{}", v)).unwrap();
                 assert_eq!(self.0, Token::Args(w.to_str().unwrap()));
             }
@@ -1124,7 +1102,7 @@ mod tests {
         use serde_json::json;
 
         // `&dyn ser::Serialize` should impl `Serialize`
-        fn assert_visit(v: &dyn Visit, tokens: &[Token]) {
+        fn assert_visit(v: &dyn Value, tokens: &[Token]) {
             assert_ser_tokens(&v, tokens);
         }
 
