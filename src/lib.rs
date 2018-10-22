@@ -303,12 +303,10 @@ mod macros;
 
 #[cfg(feature = "serde")]
 mod serde_support;
-
-#[cfg(feature = "serde")]
 #[macro_use]
 pub mod key_values;
 
-use self::key_values::{KeyValueSource, ErasedKeyValueSource};
+use self::key_values::{Source, ErasedSource};
 
 // The LOGGER static holds a pointer to the global logger. It is protected by
 // the STATE static which determines whether LOGGER has been initialized yet.
@@ -721,8 +719,7 @@ impl LevelFilter {
 #[derive(Clone, Debug)]
 pub struct Record<'a> {
     header: Header<'a>,
-    #[cfg(feature = "serde")]
-    kvs: ErasedKeyValueSource<'a>,
+    kvs: ErasedSource<'a>,
 }
 
 #[derive(Clone, Debug)]
@@ -787,8 +784,7 @@ impl<'a> Record<'a> {
     /// 
     /// Pairs aren't guaranteed to be unique (the same key may be repeated with different values).
     #[inline]
-    #[cfg(feature = "serde")]
-    pub fn key_values(&self) -> ErasedKeyValueSource {
+    pub fn key_values(&self) -> ErasedSource {
         self.kvs.clone()
     }
 
@@ -871,8 +867,8 @@ impl<'a> RecordBuilder<'a> {
                     file: None,
                     line: None,
                 },
-                #[cfg(feature = "serde")]
-                kvs: ErasedKeyValueSource::empty()
+        
+                kvs: ErasedSource::empty()
             },
         }
     }
@@ -928,8 +924,7 @@ impl<'a> RecordBuilder<'a> {
 
     /// Set key values
     #[inline]
-    #[cfg(feature = "serde")]
-    pub fn key_values(&mut self, kvs: ErasedKeyValueSource<'a>) -> &mut RecordBuilder<'a> {
+    pub fn key_values(&mut self, kvs: ErasedSource<'a>) -> &mut RecordBuilder<'a> {
         self.record.kvs = kvs;
         self
     }
@@ -1272,7 +1267,7 @@ pub fn __private_api_log(
     args: fmt::Arguments,
     level: Level,
     &(target, module_path, file, line): &(&str, &str, &str, u32),
-    kvs: &[(&str, &dyn key_values::ToValue)]
+    kvs: &[(&str, &dyn key_values::Visit)]
 ) {
     logger().log(
         &Record::builder()
@@ -1460,7 +1455,7 @@ mod tests {
     #[test]
     fn test_record_builder() {
         use super::{MetadataBuilder, RecordBuilder};
-        use key_values::RawKeyValueSource;
+        use key_values::RawSource;
         
         let target = "myApp";
         let metadata = MetadataBuilder::new().target(target).build();
@@ -1471,7 +1466,7 @@ mod tests {
             .module_path(Some("foo"))
             .file(Some("bar"))
             .line(Some(30))
-            .key_values(&RawKeyValueSource(&[("a", &"foo"), ("b", &1)]))
+            .key_values(&RawSource(&[("a", &"foo"), ("b", &1)]))
             .build();
         assert_eq!(record_test.metadata().target(), "myApp");
         assert_eq!(record_test.module_path(), Some("foo"));

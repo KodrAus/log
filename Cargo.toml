@@ -36,11 +36,9 @@ release_max_level_info  = []
 release_max_level_debug = []
 release_max_level_trace = []
 
-default = ["structured"]
-
 i128 = []
-std = ["serde/std", "erased-serde"]
-structured = ["serde"]
+std = []
+structured_serde = ["std","serde","erased-serde"]
 
 [badges]
 travis-ci = { repository = "rust-lang-nursery/log" }
