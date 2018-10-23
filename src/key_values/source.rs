@@ -6,23 +6,6 @@ use std::marker::PhantomData;
 
 use super::{Value, Error};
 
-/// A visitor for key value pairs.
-/// 
-/// The lifetime of the keys and values is captured by the `'kvs` type.
-pub trait SourceVisitor<'kvs> {
-    /// Visit a key value pair.
-    fn visit_pair(&mut self, k: &'kvs str, v: &'kvs dyn Value) -> Result<(), Error>;
-}
-
-impl<'a, 'kvs, T: ?Sized> SourceVisitor<'kvs> for &'a mut T
-where
-    T: SourceVisitor<'kvs>,
-{
-    fn visit_pair(&mut self, k: &'kvs str, v: &'kvs dyn Value) -> Result<(), Error> {
-        (*self).visit_pair(k, v)
-    }
-}
-
 /// A source for key value pairs that can be serialized.
 pub trait Source {
     /// Serialize the key value pairs.
@@ -135,6 +118,23 @@ where
         Q: Borrow<str>,
     {
         (*self).get(key)
+    }
+}
+
+/// A visitor for key value pairs.
+/// 
+/// The lifetime of the keys and values is captured by the `'kvs` type.
+pub trait SourceVisitor<'kvs> {
+    /// Visit a key value pair.
+    fn visit_pair(&mut self, k: &'kvs str, v: &'kvs dyn Value) -> Result<(), Error>;
+}
+
+impl<'a, 'kvs, T: ?Sized> SourceVisitor<'kvs> for &'a mut T
+where
+    T: SourceVisitor<'kvs>,
+{
+    fn visit_pair(&mut self, k: &'kvs str, v: &'kvs dyn Value) -> Result<(), Error> {
+        (*self).visit_pair(k, v)
     }
 }
 
