@@ -1,23 +1,24 @@
 //! Sources of key-value pairs.
 
 use std::fmt;
+use std::borrow::Borrow;
 use std::marker::PhantomData;
 
-use super::{Key, Value, Error};
+use super::{Value, Error};
 
 /// A visitor for key value pairs.
 /// 
 /// The lifetime of the keys and values is captured by the `'kvs` type.
 pub trait SourceVisitor<'kvs> {
     /// Visit a key value pair.
-    fn visit_pair(&mut self, k: &'kvs dyn Key, v: &'kvs dyn Value) -> Result<(), Error>;
+    fn visit_pair(&mut self, k: &'kvs str, v: &'kvs dyn Value) -> Result<(), Error>;
 }
 
 impl<'a, 'kvs, T: ?Sized> SourceVisitor<'kvs> for &'a mut T
 where
     T: SourceVisitor<'kvs>,
 {
-    fn visit_pair(&mut self, k: &'kvs dyn Key, v: &'kvs dyn Value) -> Result<(), Error> {
+    fn visit_pair(&mut self, k: &'kvs str, v: &'kvs dyn Value) -> Result<(), Error> {
         (*self).visit_pair(k, v)
     }
 }
@@ -47,12 +48,12 @@ pub trait Source {
     /// will do an indexed lookup instead of a scan.
     fn get<'kvs, Q>(&'kvs self, key: Q) -> Option<&'kvs dyn Value>
     where
-        Q: Key,
+        Q: Borrow<str>,
     {
-        struct Get<'k, 'v>(&'k dyn Key, Option<&'v dyn Value>);
+        struct Get<'k, 'v>(&'k str, Option<&'v dyn Value>);
 
         impl<'k, 'kvs> SourceVisitor<'kvs> for Get<'k, 'kvs> {
-            fn visit_pair(&mut self, k: &'kvs dyn Key, v: &'kvs dyn Value) -> Result<(), Error> {
+            fn visit_pair(&mut self, k: &'kvs str, v: &'kvs dyn Value) -> Result<(), Error> {
                 if k == self.0 {
                     self.1 = Some(v);
                 }
@@ -61,7 +62,7 @@ pub trait Source {
             }
         }
 
-        let mut visitor = Get(&key, None);
+        let mut visitor = Get(key.borrow(), None);
         let _ = self.visit(&mut visitor);
 
         visitor.1
@@ -84,17 +85,17 @@ pub trait Source {
     fn try_for_each<F, E>(self, f: F) -> Result<(), Error>
     where
         Self: Sized,
-        F: FnMut(&dyn Key, &dyn Value) -> Result<(), E>,
+        F: FnMut(&str, &dyn Value) -> Result<(), E>,
         E: Into<Error>,
     {
         struct ForEach<F, E>(F, PhantomData<E>);
 
         impl<'kvs, F, E> SourceVisitor<'kvs> for ForEach<F, E>
         where
-            F: FnMut(&dyn Key, &dyn Value) -> Result<(), E>,
+            F: FnMut(&str, &dyn Value) -> Result<(), E>,
             E: Into<Error>,
         {
-            fn visit_pair(&mut self, k: &'kvs dyn Key, v: &'kvs dyn Value) -> Result<(), Error> {
+            fn visit_pair(&mut self, k: &'kvs str, v: &'kvs dyn Value) -> Result<(), Error> {
                 (self.0)(k, v).map_err(Into::into)
             }
         }
@@ -131,7 +132,7 @@ where
 
     fn get<'kvs, Q>(&'kvs self, key: Q) -> Option<&'kvs dyn Value>
     where
-        Q: Key,
+        Q: Borrow<str>,
     {
         (*self).get(key)
     }
@@ -166,12 +167,12 @@ pub struct SerializeAsSeq<KVS>(KVS);
 
 impl<K, V> Source for (K, V)
 where
-    K: Key,
+    K: Borrow<str>,
     V: Value,
 {
     fn visit<'kvs>(&'kvs self, visitor: &mut dyn SourceVisitor<'kvs>) -> Result<(), Error>
     {
-        visitor.visit_pair(&self.0, &self.1)
+        visitor.visit_pair(self.0.borrow(), &self.1)
     }
 }
 
@@ -212,9 +213,9 @@ impl<'a> Source for ErasedSource<'a> {
 
     fn get<'kvs, Q>(&'kvs self, key: Q) -> Option<&'kvs dyn Value>
     where
-        Q: Key,
+        Q: Borrow<str>,
     {
-        self.0.erased_get(&key)
+        self.0.erased_get(key.borrow())
     }
 }
 
@@ -222,7 +223,7 @@ impl<'a> Source for ErasedSource<'a> {
 /// in a `Record` without requiring any generic parameters.
 trait ErasedSourceBridge {
     fn erased_visit<'kvs>(&'kvs self, visitor: &mut dyn SourceVisitor<'kvs>) -> Result<(), Error>;
-    fn erased_get<'kvs>(&'kvs self, key: &dyn Key) -> Option<&'kvs dyn Value>;
+    fn erased_get<'kvs>(&'kvs self, key: &str) -> Option<&'kvs dyn Value>;
 }
 
 impl<KVS> ErasedSourceBridge for KVS
@@ -233,7 +234,7 @@ where
         self.visit(visitor)
     }
 
-    fn erased_get<'kvs>(&'kvs self, key: &dyn Key) -> Option<&'kvs dyn Value> {
+    fn erased_get<'kvs>(&'kvs self, key: &str) -> Option<&'kvs dyn Value> {
         self.get(key)
     }
 }
@@ -291,7 +292,6 @@ mod std_support {
     use super::*;
 
     use std::hash::Hash;
-    use std::borrow::Borrow;
     use std::collections::{HashMap, BTreeMap};
 
     impl<KVS> Source for Vec<KVS> where KVS: Source {
@@ -302,13 +302,13 @@ mod std_support {
 
     impl<K, V> Source for BTreeMap<K, V>
     where
-        K: Key + Borrow<str> + Ord,
+        K: Borrow<str> + Ord,
         V: Value,
     {
         fn visit<'kvs>(&'kvs self, visitor: &mut dyn SourceVisitor<'kvs>) -> Result<(), Error>
         {
             for (k, v) in self {
-                visitor.visit_pair(&*k, &*v)?;
+                visitor.visit_pair(k.borrow(), &*v)?;
             }
 
             Ok(())
@@ -316,21 +316,21 @@ mod std_support {
 
         fn get<'kvs, Q>(&'kvs self, key: Q) -> Option<&'kvs dyn Value>
         where
-            Q: Key,
+            Q: Borrow<str>,
         {
-            BTreeMap::get(self, key.to_str()).map(|v| v as &dyn Value)
+            BTreeMap::get(self, key.borrow()).map(|v| v as &dyn Value)
         }
     }
 
     impl<K, V> Source for HashMap<K, V>
     where
-        K: Key + Borrow<str> + Eq + Hash,
+        K: Borrow<str> + Eq + Hash,
         V: Value,
     {
         fn visit<'kvs>(&'kvs self, visitor: &mut dyn SourceVisitor<'kvs>) -> Result<(), Error>
         {
             for (k, v) in self {
-                visitor.visit_pair(&*k, &*v)?;
+                visitor.visit_pair(k.borrow(), &*v)?;
             }
 
             Ok(())
@@ -338,9 +338,9 @@ mod std_support {
 
         fn get<'kvs, Q>(&'kvs self, key: Q) -> Option<&'kvs dyn Value>
         where
-            Q: Key,
+            Q: Borrow<str>,
         {
-            HashMap::get(self, key.to_str()).map(|v| v as &dyn Value)
+            HashMap::get(self, key.borrow()).map(|v| v as &dyn Value)
         }
     }
 }
