@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 use std::borrow::Borrow;
 
+/// The key in a key-value pair.
 pub struct Key<'k>(KeyInner<'k>);
 
 enum KeyInner<'k> {

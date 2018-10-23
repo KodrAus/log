@@ -4,13 +4,15 @@
 mod macros;
 
 mod error;
-mod value;
 mod key;
+pub mod value;
 pub mod source;
 
 pub use self::error::Error;
 pub use self::key::Key;
-pub use self::value::{Value, ValueVisitor};
 
 #[doc(inline)]
-pub use self::source::{Source, SourceVisitor};
+pub use self::value::Value;
+
+#[doc(inline)]
+pub use self::source::Source;

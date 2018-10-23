@@ -1,8 +1,31 @@
+//! Structured values.
+
 use std::fmt;
 
 use super::Error;
 
 /// The value in a key-value pair.
+pub struct Value<'v>(ValueInner<'v>);
+
+enum ValueInner<'v> {
+    Visit(&'v dyn Visit),
+}
+
+impl<'v> Value<'v> {
+    pub fn from_visit(v: &'v impl Visit) -> Self {
+        Value(ValueInner::Visit(v))
+    }
+}
+
+impl<'v> fmt::Debug for Value<'v> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.0 {
+            ValueInner::Visit(v) => v.fmt(f)
+        }
+    }
+}
+
+/// A value that can be visited.
 /// 
 /// **This trait cannot be implemented manually**
 /// 
@@ -19,13 +42,13 @@ use super::Error;
 /// Any other type that implements `serde::Serialize + std::fmt::Debug` will
 /// automatically implement `Visit` if the `structured_serde` feature is
 /// enabled.
-pub trait Value: fmt::Debug + visit_imp::ValuePrivate {
+pub trait Visit: fmt::Debug + visit_imp::VisitPrivate {
     /// Visit the value with the given serializer.
-    fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error>;
+    fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error>;
 }
 
 /// A serializer for primitive values.
-pub trait ValueVisitor {
+pub trait Visitor {
     /// Visit a signed integer.
     fn visit_i64(&mut self, v: i64) -> Result<(), Error> {
         self.visit_fmt(&format_args!("{:?}", v))
@@ -66,9 +89,9 @@ pub trait ValueVisitor {
     fn visit_fmt(&mut self, args: &fmt::Arguments) -> Result<(), Error>;
 }
 
-impl<'a, T: ?Sized> ValueVisitor for &'a mut T
+impl<'a, T: ?Sized> Visitor for &'a mut T
 where
-    T: ValueVisitor,
+    T: Visitor,
 {
     fn visit_i64(&mut self, v: i64) -> Result<(), Error> {
         (**self).visit_i64(v)
@@ -108,110 +131,110 @@ where
 /// All it does is make sure that our set of concrete types
 /// that implement `Visit` always implement the `Visit` trait,
 /// regardless of crate features and blanket implementations.
-trait EnsureValue: Value {}
+trait EnsureVisit: Visit {}
 
 macro_rules! ensure_impl_visit {
     ($(<$($params:tt),*> $ty:ty { $($serialize:tt)* })*) => {
         $(
-            impl<$($params),*> EnsureValue for $ty {}
-            impl<'ensure_visit, $($params),*> EnsureValue for &'ensure_visit $ty {}
+            impl<$($params),*> EnsureVisit for $ty {}
+            impl<'ensure_visit, $($params),*> EnsureVisit for &'ensure_visit $ty {}
 
             #[cfg(not(feature = "structured_serde"))]
-            impl<$($params),*> Value for $ty {
+            impl<$($params),*> Visit for $ty {
                 $($serialize)*
             }
 
             #[cfg(not(feature = "structured_serde"))]
-            impl<$($params),*> visit_imp::ValuePrivate for $ty {}
+            impl<$($params),*> visit_imp::VisitPrivate for $ty {}
         )*
     };
     ($($ty:ty { $($serialize:tt)* })*) => {
         $(
-            impl EnsureValue for $ty {}
-            impl<'ensure_visit> EnsureValue for &'ensure_visit $ty {}
+            impl EnsureVisit for $ty {}
+            impl<'ensure_visit> EnsureVisit for &'ensure_visit $ty {}
 
             #[cfg(not(feature = "structured_serde"))]
-            impl Value for $ty {
+            impl Visit for $ty {
                 $($serialize)*
             }
 
             #[cfg(not(feature = "structured_serde"))]
-            impl visit_imp::ValuePrivate for $ty {}
+            impl visit_imp::VisitPrivate for $ty {}
         )*
     }
 }
 
 ensure_impl_visit! {
     u8 {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_u64(*self as u64)
         }
     }
     u16 {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_u64(*self as u64)
         }
     }
     u32 {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_u64(*self as u64)
         }
     }
     u64 {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_u64(*self)
         }
     }
 
     i8 {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_i64(*self as i64)
         }
     }
     i16 {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_i64(*self as i64)
         }
     }
     i32 {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_i64(*self as i64)
         }
     }
     i64 {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_i64(*self)
         }
     }
 
     f32 {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_f64(*self as f64)
         }
     }
     f64 {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_f64(*self)
         }
     }
 
     char {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_char(*self)
         }
     }
     bool {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_bool(*self)
         }
     }
     str {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_str(self)
         }
     }
     [u8] {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_bytes(self)
         }
     }
@@ -219,33 +242,41 @@ ensure_impl_visit! {
 
 ensure_impl_visit! {
     <'a> fmt::Arguments<'a> {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_fmt(self)
+        }
+    }
+
+    <'v> Value<'v> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+            match self.0 {
+                ValueInner::Visit(v) => v.visit(visitor)
+            }
         }
     }
 }
 
-impl EnsureValue for dyn Value {}
+impl EnsureVisit for dyn Visit {}
 
 #[cfg(not(feature = "structured_serde"))]
 mod visit_imp {
     use super::*;
 
     #[doc(hidden)]
-    pub trait ValuePrivate {}
+    pub trait VisitPrivate {}
 
-    impl<'a, T: ?Sized> Value for &'a T
+    impl<'a, T: ?Sized> Visit for &'a T
     where
-        T: Value,
+        T: Visit,
     {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             (**self).visit(visitor)
         }
     }
 
-    impl<'a, T: ?Sized> ValuePrivate for &'a T
+    impl<'a, T: ?Sized> VisitPrivate for &'a T
     where
-        T: Value,
+        T: Visit,
     {
     }
 }
@@ -258,13 +289,13 @@ mod visit_imp {
     use serde::{Serialize, Serializer};
 
     #[doc(hidden)]
-    pub trait ValuePrivate: erased_serde::Serialize {}
+    pub trait VisitPrivate: erased_serde::Serialize {}
  
-    impl<T: ?Sized> Value for T
+    impl<T: ?Sized> Visit for T
     where
         T: Serialize + fmt::Debug,
     {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             match Serialize::serialize(self, SerdeBridge(visitor)) {
                 Err(SerdeError::Unsupported) => visitor.visit_fmt(&format_args!("{:?}", self)),
                 Err(SerdeError::Other(e)) => Err(e),
@@ -273,13 +304,13 @@ mod visit_imp {
         }
     }
 
-    impl<T: ?Sized> ValuePrivate for T
+    impl<T: ?Sized> VisitPrivate for T
     where
         T: Serialize + fmt::Debug,
     {
     }
 
-    struct SerdeBridge<'a>(&'a mut dyn ValueVisitor);
+    struct SerdeBridge<'a>(&'a mut dyn Visitor);
 
     #[derive(Debug)]
     enum SerdeError {
@@ -492,7 +523,7 @@ mod serde_support {
 
     use serde::{Serialize, Serializer};
 
-    impl<'a> Serialize for dyn Value + 'a {
+    impl<'a> Serialize for dyn Visit + 'a {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
@@ -513,17 +544,17 @@ mod std_support {
 
     ensure_impl_visit! {
         String {
-            fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+            fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
                 visitor.visit_str(&*self)
             }
         }
         Vec<u8> {
-            fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+            fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
                 visitor.visit_bytes(&*self)
             }
         }
         Path {
-            fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+            fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
                 match self.to_str() {
                     Some(s) => visitor.visit_str(s),
                     None => visitor.visit_fmt(&format_args!("{:?}", self)),
@@ -531,7 +562,7 @@ mod std_support {
             }
         }
         PathBuf {
-            fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+            fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
                 self.as_path().visit(visitor)
             }
         }
@@ -558,10 +589,10 @@ mod tests {
     }
 
     // `&dyn ser::Serialize` should impl `Serialize`
-    fn assert_visit(v: &dyn Value, token: Token) {
+    fn assert_visit(v: &dyn Visit, token: Token) {
         struct TestVisitor<'a>(Token<'a>);
 
-        impl<'a> ValueVisitor for TestVisitor<'a> {
+        impl<'a> Visitor for TestVisitor<'a> {
             fn visit_i64(&mut self, v: i64) {
                 assert_eq!(self.0, Token::I64(v));
             }
@@ -596,14 +627,14 @@ mod tests {
 
                 const LEN: usize = 128;
 
-                struct ValueArgs {
+                struct VisitArgs {
                     buf: [u8; LEN],
                     cursor: usize,
                 }
 
-                impl ValueArgs {
+                impl VisitArgs {
                     fn new() -> Self {
-                        ValueArgs {
+                        VisitArgs {
                             buf: [0; LEN],
                             cursor: 0,
                         }
@@ -614,7 +645,7 @@ mod tests {
                     }
                 }
 
-                impl Write for ValueArgs {
+                impl Write for VisitArgs {
                     fn write_str(&mut self, s: &str) -> fmt::Result {
                         let src = s.as_bytes();
                         let next_cursor = self.cursor + src.len();
@@ -636,7 +667,7 @@ mod tests {
                     }
                 }
 
-                let mut w = ValueArgs::new();
+                let mut w = VisitArgs::new();
                 w.write_fmt(format_args!("{}", v)).unwrap();
                 assert_eq!(self.0, Token::Args(w.to_str().unwrap()));
             }
@@ -672,7 +703,7 @@ mod tests {
         use serde_json::json;
 
         // `&dyn ser::Serialize` should impl `Serialize`
-        fn assert_visit(v: &dyn Value, tokens: &[Token]) {
+        fn assert_visit(v: &dyn Visit, tokens: &[Token]) {
             assert_ser_tokens(&v, tokens);
         }
 
