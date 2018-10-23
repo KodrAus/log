@@ -1,6 +1,9 @@
+//! Serialization for structured values.
+
 use std::fmt;
 
-use super::Error;
+#[doc(inline)]
+pub use super::Error;
 
 /// An arbitrary structured value.
 /// 
@@ -21,11 +24,11 @@ use super::Error;
 /// enabled.
 pub trait Value: fmt::Debug + visit_imp::ValuePrivate {
     /// Visit the value with the given serializer.
-    fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error>;
+    fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error>;
 }
 
 /// A serializer for primitive values.
-pub trait ValueVisitor {
+pub trait Visitor {
     /// Visit a signed integer.
     fn visit_i64(&mut self, v: i64) -> Result<(), Error> {
         self.visit_fmt(&format_args!("{:?}", v))
@@ -66,9 +69,9 @@ pub trait ValueVisitor {
     fn visit_fmt(&mut self, args: &fmt::Arguments) -> Result<(), Error>;
 }
 
-impl<'a, T: ?Sized> ValueVisitor for &'a mut T
+impl<'a, T: ?Sized> Visitor for &'a mut T
 where
-    T: ValueVisitor,
+    T: Visitor,
 {
     fn visit_i64(&mut self, v: i64) -> Result<(), Error> {
         (**self).visit_i64(v)
@@ -143,75 +146,75 @@ macro_rules! ensure_impl_visit {
 
 ensure_impl_visit! {
     u8 {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_u64(*self as u64)
         }
     }
     u16 {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_u64(*self as u64)
         }
     }
     u32 {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_u64(*self as u64)
         }
     }
     u64 {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_u64(*self)
         }
     }
 
     i8 {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_i64(*self as i64)
         }
     }
     i16 {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_i64(*self as i64)
         }
     }
     i32 {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_i64(*self as i64)
         }
     }
     i64 {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_i64(*self)
         }
     }
 
     f32 {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_f64(*self as f64)
         }
     }
     f64 {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_f64(*self)
         }
     }
 
     char {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_char(*self)
         }
     }
     bool {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_bool(*self)
         }
     }
     str {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_str(self)
         }
     }
     [u8] {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_bytes(self)
         }
     }
@@ -219,15 +222,19 @@ ensure_impl_visit! {
 
 ensure_impl_visit! {
     <'a> fmt::Arguments<'a> {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_fmt(self)
         }
     }
 
-    <'v> super::SourceValue<'v> {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
-            match self.0 {
-                super::ValueInner::Borrow(v) => v.visit(visitor)
+    <'v> super::source::Value<'v> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+            use super::private::{ValueInner, value_inner};
+
+            match value_inner(self) {
+                ValueInner::Borrowed(v) => v.visit(visitor),
+                #[cfg(feature = "std")]
+                Owned(ref v) => v.visit(visitor),
             }
         }
     }
@@ -246,7 +253,7 @@ mod visit_imp {
     where
         T: Value,
     {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             (**self).visit(visitor)
         }
     }
@@ -272,7 +279,7 @@ mod visit_imp {
     where
         T: Serialize + fmt::Debug,
     {
-        fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             match Serialize::serialize(self, SerdeBridge(visitor)) {
                 Err(SerdeError::Unsupported) => visitor.visit_fmt(&format_args!("{:?}", self)),
                 Err(SerdeError::Other(e)) => Err(e),
@@ -287,7 +294,7 @@ mod visit_imp {
     {
     }
 
-    struct SerdeBridge<'a>(&'a mut dyn ValueVisitor);
+    struct SerdeBridge<'a>(&'a mut dyn Visitor);
 
     #[derive(Debug)]
     enum SerdeError {
@@ -521,17 +528,17 @@ mod std_support {
 
     ensure_impl_visit! {
         String {
-            fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+            fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
                 visitor.visit_str(&*self)
             }
         }
         Vec<u8> {
-            fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+            fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
                 visitor.visit_bytes(&*self)
             }
         }
         Path {
-            fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+            fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
                 match self.to_str() {
                     Some(s) => visitor.visit_str(s),
                     None => visitor.visit_fmt(&format_args!("{:?}", self)),
@@ -539,7 +546,7 @@ mod std_support {
             }
         }
         PathBuf {
-            fn visit(&self, visitor: &mut dyn ValueVisitor) -> Result<(), Error> {
+            fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
                 self.as_path().visit(visitor)
             }
         }
@@ -569,7 +576,7 @@ mod tests {
     fn assert_visit(v: &dyn Value, token: Token) {
         struct TestVisitor<'a>(Token<'a>);
 
-        impl<'a> ValueVisitor for TestVisitor<'a> {
+        impl<'a> Visitor for TestVisitor<'a> {
             fn visit_i64(&mut self, v: i64) {
                 assert_eq!(self.0, Token::I64(v));
             }
