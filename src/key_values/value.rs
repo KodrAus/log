@@ -219,11 +219,11 @@ ensure_impl_visit! {
         }
     }
 
-    super::source::OwnedValue {
+    super::source::ValueOwned {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            use super::private::{owned_value_inner};
+            use super::private::{value_owned_inner};
 
-            owned_value_inner(self).visit(visitor)
+            value_owned_inner(self).visit(visitor)
         }
     }
 }
@@ -240,9 +240,9 @@ ensure_impl_visit! {
             use super::private::{ToValue, ValueInner, value_inner};
 
             match value_inner(self) {
-                ValueInner::Borrowed(v) => v.as_value().visit(visitor),
+                ValueInner::Borrowed(v) => v.visit(visitor),
                 #[cfg(feature = "std")]
-                ValueInner::Owned(ref v) => v.as_value().visit(visitor),
+                ValueInner::Owned(ref v) => v.visit(visitor),
             }
         }
     }

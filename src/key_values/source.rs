@@ -6,36 +6,47 @@ use std::marker::PhantomData;
 
 use super::value;
 
+use super::private::{value, value_owned};
+
 #[doc(inline)]
-pub use super::private::{Key, ToValue, Value, OwnedValue};
+pub use super::private::{Key, ToValue, Value, ValueOwned};
 
 #[doc(inline)]
 pub use super::Error;
 
 use std::borrow::ToOwned;
 
+// TODO: Would it be safe to remove the `ToOwned` bounds in `no_std`?
+// TODO: We might need to make some methods private so it can't be
+// implemented
 impl<T> ToValue for T
 where
     T: value::Value + Send + Sync + ToOwned,
     T::Owned: value::Value + Send + Sync + 'static,
 {
-    fn as_value(&self) -> &dyn value::Value {
-        self
+    fn to_value(&self) -> Value {
+        value(self)
     }
 
-    fn to_owned(&self) -> OwnedValue {
-        OwnedValue::new(self.to_owned())
+    fn to_owned(&self) -> ValueOwned {
+        value_owned(self.to_owned())
     }
 }
 
 impl<'a> ToValue for &'a dyn ToValue {
-    fn as_value(&self) -> &dyn value::Value {
-        (*self).as_value()
+    fn to_value(&self) -> Value {
+        (**self).to_value()
     }
 
-    fn to_owned(&self) -> OwnedValue {
-        (*self).to_owned()
+    fn to_owned(&self) -> ValueOwned {
+        (**self).to_owned()
     }
+}
+
+fn ensure_to_value<'a>() {
+    fn is_to_value<T: ToValue + ?Sized>() {}
+
+    is_to_value::<&'a dyn ToValue>();
 }
 
 /// A source for key value pairs that can be serialized.
@@ -204,7 +215,7 @@ where
 {
     fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error>
     {
-        visitor.visit_pair(Key::new(&self.0), Value::new(&self.1))
+        visitor.visit_pair(Key::new(&self.0), self.1.to_value())
     }
 }
 
@@ -228,7 +239,7 @@ impl<'a> ErasedSource<'a> {
     }
 
     pub fn empty() -> Self {
-        ErasedSource(&(&[] as &[(&str, OwnedValue)]))
+        ErasedSource(&(&[] as &[(&str, ValueOwned)]))
     }
 }
 
@@ -340,7 +351,7 @@ mod std_support {
         fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error>
         {
             for (k, v) in self {
-                visitor.visit_pair(Key::new(k), Value::new(v))?;
+                visitor.visit_pair(Key::new(k), v.to_value())?;
             }
 
             Ok(())
@@ -350,7 +361,7 @@ mod std_support {
         where
             Q: Borrow<str>,
         {
-            BTreeMap::get(self, key.borrow()).map(|v| Value::new(v))
+            BTreeMap::get(self, key.borrow()).map(|v| v.to_value())
         }
     }
 
@@ -362,7 +373,7 @@ mod std_support {
         fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error>
         {
             for (k, v) in self {
-                visitor.visit_pair(Key::new(k), Value::new(v))?;
+                visitor.visit_pair(Key::new(k), v.to_value())?;
             }
 
             Ok(())
@@ -372,7 +383,7 @@ mod std_support {
         where
             Q: Borrow<str>,
         {
-            HashMap::get(self, key.borrow()).map(|v| Value::new(v))
+            HashMap::get(self, key.borrow()).map(|v| v.to_value())
         }
     }
 }
