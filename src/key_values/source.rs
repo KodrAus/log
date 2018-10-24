@@ -7,10 +7,36 @@ use std::marker::PhantomData;
 use super::value;
 
 #[doc(inline)]
-pub use super::private::{Key, Value};
+pub use super::private::{Key, ToValue, Value, OwnedValue};
 
 #[doc(inline)]
 pub use super::Error;
+
+use std::borrow::ToOwned;
+
+impl<T> ToValue for T
+where
+    T: value::Value + Send + Sync + ToOwned,
+    T::Owned: value::Value + Send + Sync + 'static,
+{
+    fn as_value(&self) -> &dyn value::Value {
+        self
+    }
+
+    fn to_owned(&self) -> OwnedValue {
+        OwnedValue::new(self.to_owned())
+    }
+}
+
+impl<'a> ToValue for &'a dyn ToValue {
+    fn as_value(&self) -> &dyn value::Value {
+        (*self).as_value()
+    }
+
+    fn to_owned(&self) -> OwnedValue {
+        (*self).to_owned()
+    }
+}
 
 /// A source for key value pairs that can be serialized.
 pub trait Source {
@@ -174,7 +200,7 @@ pub struct SerializeAsSeq<KVS>(KVS);
 impl<K, V> Source for (K, V)
 where
     K: Borrow<str>,
-    V: value::Value,
+    V: ToValue,
 {
     fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error>
     {
@@ -202,7 +228,7 @@ impl<'a> ErasedSource<'a> {
     }
 
     pub fn empty() -> Self {
-        ErasedSource(&(&[] as &[(&str, Value)]))
+        ErasedSource(&(&[] as &[(&str, OwnedValue)]))
     }
 }
 
@@ -309,7 +335,7 @@ mod std_support {
     impl<K, V> Source for BTreeMap<K, V>
     where
         K: Borrow<str> + Ord,
-        V: value::Value,
+        V: ToValue,
     {
         fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error>
         {
@@ -331,7 +357,7 @@ mod std_support {
     impl<K, V> Source for HashMap<K, V>
     where
         K: Borrow<str> + Eq + Hash,
-        V: value::Value,
+        V: ToValue,
     {
         fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error>
         {

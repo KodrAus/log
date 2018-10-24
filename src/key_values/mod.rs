@@ -46,6 +46,26 @@ mod private {
         }
     }
 
+    impl<'k> fmt::Debug for Key<'k> {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            match self.0 {
+                KeyInner::Borrowed(k) => k.fmt(f),
+                #[cfg(feature = "std")]
+                KeyInner::Owned(ref k) => k.fmt(f),
+            }
+        }
+    }
+
+    impl<'k> fmt::Display for Key<'k> {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            match self.0 {
+                KeyInner::Borrowed(k) => k.fmt(f),
+                #[cfg(feature = "std")]
+                KeyInner::Owned(ref k) => k.fmt(f),
+            }
+        }
+    }
+
     impl<'k> AsRef<str> for Key<'k> {
         fn as_ref(&self) -> &str {
             self.as_str()
@@ -93,18 +113,40 @@ mod private {
         }
     }
 
+    pub trait ToValue: Send + Sync {
+        fn as_value(&self) -> &dyn value::Value;
+
+        fn to_owned(&self) -> OwnedValue;
+    }
+
     /// The value in a key-value pair.
     pub struct Value<'v>(ValueInner<'v>);
 
+    use std::borrow::ToOwned;
+
+    impl<'v> ToOwned for Value<'v> {
+        type Owned = OwnedValue;
+
+        fn to_owned(&self) -> Self::Owned {
+            match self.0 {
+                ValueInner::Owned(ref v) => OwnedValue(Value(ValueInner::Owned(v.clone()))),
+                ValueInner::Borrowed(v) => v.to_owned(),
+            }
+        }
+    }
+
+    use std::sync::Arc;
+
     // pub(super)
+    #[derive(Clone)]
     pub enum ValueInner<'v> {
-        Borrowed(&'v dyn value::Value),
+        Borrowed(&'v dyn ToValue),
         #[cfg(feature = "std")]
-        Owned(Box<dyn value::Value>),
+        Owned(Arc<dyn value::Value + Send + Sync>),
     }
 
     impl<'v> Value<'v> {
-        pub fn new(v: &'v impl value::Value) -> Self {
+        pub fn new(v: &'v impl ToValue) -> Self {
             Value(ValueInner::Borrowed(v))
         }
     }
@@ -112,16 +154,46 @@ mod private {
     impl<'v> fmt::Debug for Value<'v> {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match self.0 {
-                ValueInner::Borrowed(v) => v.fmt(f),
+                ValueInner::Borrowed(v) => v.as_value().fmt(f),
                 #[cfg(feature = "std")]
                 ValueInner::Owned(ref v) => v.fmt(f),
             }
         }
     }
 
+    pub struct OwnedValue(Value<'static>);
+
+    impl Clone for OwnedValue {
+        fn clone(&self) -> Self {
+            let value = &self.0;
+
+            OwnedValue(Value(value.0.clone()))
+        }
+    }
+
+    impl OwnedValue {
+        pub fn new(v: impl value::Value + Send + Sync + 'static) -> Self {
+            OwnedValue(Value(ValueInner::Owned(Arc::new(v))))
+        }
+    }
+
+    impl fmt::Debug for OwnedValue {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            self.0.fmt(f)
+        }
+    }
+
+    impl<'v> Borrow<Value<'v>> for OwnedValue {
+        fn borrow(&self) -> &Value<'v> {
+            &self.0
+        }
+    }
+
     // pub(super)
     #[cfg(not(feature = "structured_serde"))]
     pub fn value_inner<'a, 'b>(v: &'a Value<'b>) -> &'a ValueInner<'b> { &v.0 }
+    #[cfg(not(feature = "structured_serde"))]
+    pub fn owned_value_inner<'a>(v: &'a OwnedValue) -> &'a dyn value::Value { &v.0 }
 
     #[cfg(feature = "std")]
     mod std_support {
@@ -136,12 +208,6 @@ mod private {
         impl<'k> From<String> for Key<'k> {
             fn from(k: String) -> Self {
                 Key::from_owned(k)
-            }
-        }
-
-        impl<'v> Value<'v> {
-            pub fn from_owned(v: impl value::Value + 'static) -> Self {
-                Value(ValueInner::Owned(Box::new(v)))
             }
         }
     }
@@ -167,9 +233,22 @@ mod private {
                 S: Serializer,
             {
                 match self.0 {
-                    ValueInner::Borrowed(v) => v.serialize(serializer),
-                    ValueInner::Owned(ref v) => v.serialize(serializer),
+                    ValueInner::Borrowed(v) => v.as_value().serialize(serializer),
+                    ValueInner::Owned(ref v) => {
+                        let v: &dyn value::Value = &**v;
+
+                        v.serialize(serializer)
+                    }
                 }
+            }
+        }
+
+        impl<'v> Serialize for OwnedValue {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                self.0.serialize(serializer)
             }
         }
     }

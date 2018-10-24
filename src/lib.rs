@@ -306,7 +306,7 @@ mod serde_support;
 #[macro_use]
 pub mod key_values;
 
-use self::key_values::source::{Source, ErasedSource};
+use self::key_values::source::{Source, ErasedSource, ToValue};
 use self::key_values::value::Value;
 
 // The LOGGER static holds a pointer to the global logger. It is protected by
@@ -1268,7 +1268,7 @@ pub fn __private_api_log(
     args: fmt::Arguments,
     level: Level,
     &(target, module_path, file, line): &(&str, &str, &str, u32),
-    kvs: &[(&str, &dyn Value)]
+    kvs: &[(&str, &dyn ToValue)]
 ) {
     logger().log(
         &Record::builder()

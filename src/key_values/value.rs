@@ -218,6 +218,14 @@ ensure_impl_visit! {
             visitor.visit_bytes(self)
         }
     }
+
+    super::source::OwnedValue {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+            use super::private::{owned_value_inner};
+
+            owned_value_inner(self).visit(visitor)
+        }
+    }
 }
 
 ensure_impl_visit! {
@@ -229,18 +237,19 @@ ensure_impl_visit! {
 
     <'v> super::source::Value<'v> {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            use super::private::{ValueInner, value_inner};
+            use super::private::{ToValue, ValueInner, value_inner};
 
             match value_inner(self) {
-                ValueInner::Borrowed(v) => v.visit(visitor),
+                ValueInner::Borrowed(v) => v.as_value().visit(visitor),
                 #[cfg(feature = "std")]
-                Owned(ref v) => v.visit(visitor),
+                ValueInner::Owned(ref v) => v.as_value().visit(visitor),
             }
         }
     }
 }
 
 impl EnsureValue for dyn Value {}
+impl<'a> EnsureValue for &'a dyn Value {}
 
 #[cfg(not(feature = "structured_serde"))]
 mod visit_imp {
@@ -262,6 +271,56 @@ mod visit_imp {
     where
         T: Value,
     {
+    }
+
+    #[cfg(feature = "std")]
+    mod std_support {
+        use super::*;
+
+        use std::rc::Rc;
+        use std::sync::Arc;
+
+        impl<T: ?Sized> Value for Box<T>
+        where
+            T: Value,
+        {
+            fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+                (**self).visit(visitor)
+            }
+        }
+
+        impl<T: ?Sized> visit_imp::ValuePrivate for Box<T>
+        where
+            T: Value,
+        {}
+
+        impl<T: ?Sized> Value for Arc<T>
+        where
+            T: Value,
+        {
+            fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+                (**self).visit(visitor)
+            }
+        }
+
+        impl<T: ?Sized> visit_imp::ValuePrivate for Arc<T>
+        where
+            T: Value,
+        {}
+
+        impl<T: ?Sized> Value for Rc<T>
+        where
+            T: Value,
+        {
+            fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+                (**self).visit(visitor)
+            }
+        }
+
+        impl<T: ?Sized> visit_imp::ValuePrivate for Rc<T>
+        where
+            T: Value,
+        {}
     }
 }
 
