@@ -29,24 +29,33 @@ pub trait Value: fmt::Debug + visit_imp::ValuePrivate {
 
 /// A serializer for primitive values.
 pub trait Visitor {
+    /// Visit an arbitrary value.
+    /// 
+    /// Depending on crate features there are a few things
+    /// you can do with a value. You can:
+    /// 
+    /// - format it using `Debug`.
+    /// - serialize it using `serde`.
+    fn visit_any(&mut self, v: &dyn Value) -> Result<(), Error>;
+
     /// Visit a signed integer.
     fn visit_i64(&mut self, v: i64) -> Result<(), Error> {
-        self.visit_fmt(&format_args!("{:?}", v))
+        self.visit_any(&v)
     }
 
     /// Visit an unsigned integer.
     fn visit_u64(&mut self, v: u64) -> Result<(), Error> {
-        self.visit_fmt(&format_args!("{:?}", v))
+        self.visit_any(&v)
     }
 
     /// Visit a floating point number.
     fn visit_f64(&mut self, v: f64) -> Result<(), Error> {
-        self.visit_fmt(&format_args!("{:?}", v))
+        self.visit_any(&v)
     }
 
     /// Visit a boolean.
     fn visit_bool(&mut self, v: bool) -> Result<(), Error> {
-        self.visit_fmt(&format_args!("{:?}", v))
+        self.visit_any(&v)
     }
 
     /// Visit a single character.
@@ -57,22 +66,28 @@ pub trait Visitor {
 
     /// Visit a UTF8 string.
     fn visit_str(&mut self, v: &str) -> Result<(), Error> {
-        self.visit_fmt(&format_args!("{:?}", v))
+        self.visit_any(&v)
     }
 
     /// Visit a raw byte buffer.
     fn visit_bytes(&mut self, v: &[u8]) -> Result<(), Error> {
-        self.visit_fmt(&format_args!("{:?}", v))
+        self.visit_any(&v)
     }
 
     /// Visit standard arguments.
-    fn visit_fmt(&mut self, args: &fmt::Arguments) -> Result<(), Error>;
+    fn visit_fmt(&mut self, v: &fmt::Arguments) -> Result<(), Error> {
+        self.visit_any(&v)
+    }
 }
 
 impl<'a, T: ?Sized> Visitor for &'a mut T
 where
     T: Visitor,
 {
+    fn visit_any(&mut self, v: &dyn Value) -> Result<(), Error> {
+        (**self).visit_any(v)
+    }
+
     fn visit_i64(&mut self, v: i64) -> Result<(), Error> {
         (**self).visit_i64(v)
     }
@@ -233,8 +248,9 @@ ensure_impl_visit! {
 
             match value_inner(self) {
                 ValueInner::Borrowed(v) => v.visit(visitor),
+                ValueInner::Any(v) => v.visit(visitor),
                 #[cfg(feature = "std")]
-                Owned(ref v) => v.visit(visitor),
+                ValueInner::Owned(ref v) => v.visit(visitor),
             }
         }
     }
