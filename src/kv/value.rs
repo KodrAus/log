@@ -20,7 +20,7 @@ pub use super::Error;
 /// - Paths: `Path`, `PathBuf`
 /// 
 /// Any other type that implements `serde::Serialize + std::fmt::Debug` will
-/// automatically implement `Visit` if the `structured_serde` feature is
+/// automatically implement `Visit` if the `kv_serde` feature is
 /// enabled.
 pub trait Value: fmt::Debug + visit_imp::ValuePrivate {
     /// Visit the value with the given serializer.
@@ -134,12 +134,12 @@ macro_rules! ensure_impl_visit {
             impl<$($params),*> EnsureValue for $ty {}
             impl<'ensure_visit, $($params),*> EnsureValue for &'ensure_visit $ty {}
 
-            #[cfg(not(feature = "structured_serde"))]
+            #[cfg(not(feature = "kv_serde"))]
             impl<$($params),*> Value for $ty {
                 $($serialize)*
             }
 
-            #[cfg(not(feature = "structured_serde"))]
+            #[cfg(not(feature = "kv_serde"))]
             impl<$($params),*> visit_imp::ValuePrivate for $ty {}
         )*
     };
@@ -148,12 +148,12 @@ macro_rules! ensure_impl_visit {
             impl EnsureValue for $ty {}
             impl<'ensure_visit> EnsureValue for &'ensure_visit $ty {}
 
-            #[cfg(not(feature = "structured_serde"))]
+            #[cfg(not(feature = "kv_serde"))]
             impl Value for $ty {
                 $($serialize)*
             }
 
-            #[cfg(not(feature = "structured_serde"))]
+            #[cfg(not(feature = "kv_serde"))]
             impl visit_imp::ValuePrivate for $ty {}
         )*
     }
@@ -258,7 +258,7 @@ ensure_impl_visit! {
 
 impl EnsureValue for dyn Value {}
 
-#[cfg(not(feature = "structured_serde"))]
+#[cfg(not(feature = "kv_serde"))]
 mod visit_imp {
     use super::*;
 
@@ -281,7 +281,7 @@ mod visit_imp {
     }
 }
 
-#[cfg(feature = "structured_serde")]
+#[cfg(feature = "kv_serde")]
 mod visit_imp {
     use super::*;
 
@@ -517,7 +517,7 @@ mod visit_imp {
     }
 }
 
-#[cfg(feature = "structured_serde")]
+#[cfg(feature = "kv_serde")]
 mod serde_support {
     use super::*;
 
@@ -533,7 +533,7 @@ mod serde_support {
     }
 }
 
-#[cfg(feature = "structured_serde")]
+#[cfg(feature = "kv_serde")]
 pub use self::serde_support::*;
 
 #[cfg(feature = "std")]
@@ -684,7 +684,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "structured_serde")]
+    #[cfg(feature = "kv_serde")]
     fn visit_unsupported_as_debug() {
         use serde_json::json;
 
@@ -696,8 +696,8 @@ mod tests {
         assert_visit(&v, Token::Args(&format!("{:?}", v)));
     }
 
-    #[cfg(feature = "structured_serde")]
-    mod structured_serde {
+    #[cfg(feature = "kv_serde")]
+    mod kv_serde {
         use crate::*;
         use serde_test::{Token, assert_ser_tokens};
         use serde_json::json;

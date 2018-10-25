@@ -48,7 +48,7 @@ impl fmt::Display for ErrorInner {
     }
 }
 
-#[cfg(feature = "structured_serde")]
+#[cfg(feature = "kv_serde")]
 mod serde_support {
     use super::*;
 
@@ -65,7 +65,7 @@ mod serde_support {
     }
 }
 
-#[cfg(feature = "structured_serde")]
+#[cfg(feature = "kv_serde")]
 pub use self::serde_support::*;
 
 #[cfg(feature = "std")]

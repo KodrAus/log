@@ -112,7 +112,10 @@ mod private {
         /// Create a value from an anonymous value.
         /// 
         /// The value must be provided with a compatible visit method.
-        pub fn any<T>(v: &'v T, visit: fn(&T, &mut dyn value::Visitor) -> Result<(), Error>) -> Self {
+        pub fn any<T>(v: &'v T, visit: fn(&T, &mut dyn value::Visitor) -> Result<(), Error>) -> Self
+        where
+            T: 'static,
+        {
             Value(ValueInner::Any(Any::new(v, visit)))
         }
     }
@@ -177,7 +180,10 @@ mod private {
     }
 
     impl<'a> Any<'a> {
-        pub fn new<T>(data: &'a T, visit: fn(&T, &mut dyn value::Visitor) -> Result<(), Error>) -> Self {
+        pub fn new<T>(data: &'a T, visit: fn(&T, &mut dyn value::Visitor) -> Result<(), Error>) -> Self
+        where
+            T: 'static,
+        {
             unsafe {
                 Any {
                     data: mem::transmute::<&'a T, &'a Void>(data),
@@ -194,7 +200,7 @@ mod private {
         }
     }
 
-    #[cfg(not(feature = "structured_serde"))]
+    #[cfg(not(feature = "kv_serde"))]
     pub fn value_inner<'a, 'b>(v: &'a Value<'b>) -> &'a ValueInner<'b> { &v.0 }
 
     #[cfg(feature = "std")]
@@ -202,25 +208,25 @@ mod private {
         use super::*;
 
         impl<'k> Key<'k> {
-            pub fn from_owned(k: impl Into<String>) -> Self {
+            pub fn owned(k: impl Into<String>) -> Self {
                 Key(KeyInner::Owned(k.into()))
             }
         }
 
         impl<'k> From<String> for Key<'k> {
             fn from(k: String) -> Self {
-                Key::from_owned(k)
+                Key::owned(k)
             }
         }
 
         impl<'v> Value<'v> {
-            pub fn from_owned(v: impl value::Value + 'static) -> Self {
+            pub fn owned(v: impl value::Value + 'static) -> Self {
                 Value(ValueInner::Owned(Box::new(v)))
             }
         }
     }
 
-    #[cfg(feature = "structured_serde")]
+    #[cfg(feature = "kv_serde")]
     mod serde_support {
         use super::*;
 

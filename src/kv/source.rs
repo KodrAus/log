@@ -93,7 +93,7 @@ pub trait Source {
     }
 
     /// Serialize the key-value pairs as a map.
-    #[cfg(feature = "structured_serde")]
+    #[cfg(feature = "kv_serde")]
     fn serialize_as_map(self) -> SerializeAsMap<Self>
     where
         Self: Sized,
@@ -102,7 +102,7 @@ pub trait Source {
     }
 
     /// Serialize the key-value pairs as a sequence.
-    #[cfg(feature = "structured_serde")]
+    #[cfg(feature = "kv_serde")]
     fn serialize_as_seq(self) -> SerializeAsSeq<Self>
     where
         Self: Sized,
@@ -163,12 +163,12 @@ where
 
 /// Serialize the key-value pairs as a map.
 #[derive(Debug)]
-#[cfg(feature = "structured_serde")]
+#[cfg(feature = "kv_serde")]
 pub struct SerializeAsMap<KVS>(KVS);
 
 /// Serialize the key-value pairs as a sequence.
 #[derive(Debug)]
-#[cfg(feature = "structured_serde")]
+#[cfg(feature = "kv_serde")]
 pub struct SerializeAsSeq<KVS>(KVS);
 
 impl<K, V> Source for (K, V)
@@ -245,7 +245,7 @@ where
     }
 }
 
-#[cfg(feature = "structured_serde")]
+#[cfg(feature = "kv_serde")]
 mod serde_support {
     use super::*;
 
@@ -290,7 +290,7 @@ mod serde_support {
     }
 }
 
-#[cfg(feature = "structured_serde")]
+#[cfg(feature = "kv_serde")]
 pub use self::serde_support::*;
 
 #[cfg(feature = "std")]
