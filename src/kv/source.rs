@@ -193,7 +193,7 @@ impl<KVS> Source for [KVS] where KVS: Source {
 }
 
 /// A key value source on a `Record`.
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct ErasedSource<'a>(&'a dyn ErasedSourceBridge);
 
 impl<'a> ErasedSource<'a> {

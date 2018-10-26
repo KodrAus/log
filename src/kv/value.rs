@@ -48,6 +48,16 @@ pub trait Visitor {
         self.visit_any(&v)
     }
 
+    /// Visit a 128bit signed integer.
+    fn visit_i128(&mut self, v: i128) -> Result<(), Error> {
+        self.visit_any(&v)
+    }
+
+    /// Visit a 128bit unsigned integer.
+    fn visit_u128(&mut self, v: u128) -> Result<(), Error> {
+        self.visit_any(&v)
+    }
+
     /// Visit a floating point number.
     fn visit_f64(&mut self, v: f64) -> Result<(), Error> {
         self.visit_any(&v)
@@ -75,6 +85,12 @@ pub trait Visitor {
     }
 
     /// Visit standard arguments.
+    fn visit_none(&mut self) -> Result<(), Error> {
+        let v: Option<&dyn Value> = None;
+        self.visit_any(&v)
+    }
+
+    /// Visit standard arguments.
     fn visit_fmt(&mut self, v: &fmt::Arguments) -> Result<(), Error> {
         self.visit_any(&v)
     }
@@ -94,6 +110,14 @@ where
 
     fn visit_u64(&mut self, v: u64) -> Result<(), Error> {
         (**self).visit_u64(v)
+    }
+
+    fn visit_i128(&mut self, v: i128) -> Result<(), Error> {
+        (**self).visit_i128(v)
+    }
+
+    fn visit_u128(&mut self, v: u128) -> Result<(), Error> {
+        (**self).visit_u128(v)
     }
 
     fn visit_f64(&mut self, v: f64) -> Result<(), Error> {
@@ -116,6 +140,10 @@ where
         (**self).visit_bytes(v)
     }
 
+    fn visit_none(&mut self) -> Result<(), Error> {
+        (**self).visit_none()
+    }
+
     fn visit_fmt(&mut self, args: &fmt::Arguments) -> Result<(), Error> {
         (**self).visit_fmt(args)
     }
@@ -129,106 +157,116 @@ where
 trait EnsureValue: Value {}
 
 macro_rules! ensure_impl_visit {
-    ($(<$($params:tt),*> $ty:ty { $($serialize:tt)* })*) => {
+    ($(impl: { $($params:tt)* }
+       where: { $($where:tt)* }
+       $ty:ty: { $($serialize:tt)* })*
+    ) => {
         $(
-            impl<$($params),*> EnsureValue for $ty {}
-            impl<'ensure_visit, $($params),*> EnsureValue for &'ensure_visit $ty {}
+            impl<$($params)*> EnsureValue for $ty
+            where
+                $($where)* {}
+            impl<'ensure_visit, $($params)*> EnsureValue for &'ensure_visit $ty
+            where
+                $($where)* {}
 
             #[cfg(not(feature = "kv_serde"))]
-            impl<$($params),*> Value for $ty {
+            impl<$($params)*> Value for $ty
+            where
+                $($where)*
+            {
                 $($serialize)*
             }
 
             #[cfg(not(feature = "kv_serde"))]
-            impl<$($params),*> visit_imp::ValuePrivate for $ty {}
+            impl<$($params)*> visit_imp::ValuePrivate for $ty
+                where
+                    $($where)* {}
         )*
     };
-    ($($ty:ty { $($serialize:tt)* })*) => {
-        $(
-            impl EnsureValue for $ty {}
-            impl<'ensure_visit> EnsureValue for &'ensure_visit $ty {}
-
-            #[cfg(not(feature = "kv_serde"))]
-            impl Value for $ty {
-                $($serialize)*
-            }
-
-            #[cfg(not(feature = "kv_serde"))]
-            impl visit_imp::ValuePrivate for $ty {}
-        )*
+    ($(impl: { $($params:tt)* }
+       $ty:ty: { $($serialize:tt)* })*
+    ) => {
+        ensure_impl_visit! {
+            $(impl: {$($params)*} where: {} $ty: { $($serialize)* })*
+        }
+    };
+    ($($ty:ty: { $($serialize:tt)* })*) => {
+        ensure_impl_visit! {
+            $(impl: {} where: {} $ty: { $($serialize)* })*
+        }
     }
 }
 
 ensure_impl_visit! {
-    u8 {
+    u8: {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_u64(*self as u64)
         }
     }
-    u16 {
+    u16: {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_u64(*self as u64)
         }
     }
-    u32 {
+    u32: {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_u64(*self as u64)
         }
     }
-    u64 {
+    u64: {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_u64(*self)
         }
     }
 
-    i8 {
+    i8: {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_i64(*self as i64)
         }
     }
-    i16 {
+    i16: {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_i64(*self as i64)
         }
     }
-    i32 {
+    i32: {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_i64(*self as i64)
         }
     }
-    i64 {
+    i64: {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_i64(*self)
         }
     }
 
-    f32 {
+    f32: {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_f64(*self as f64)
         }
     }
-    f64 {
+    f64: {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_f64(*self)
         }
     }
 
-    char {
+    char: {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_char(*self)
         }
     }
-    bool {
+    bool: {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_bool(*self)
         }
     }
-    str {
+    str: {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_str(self)
         }
     }
-    [u8] {
+    [u8]: {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_bytes(self)
         }
@@ -236,13 +274,28 @@ ensure_impl_visit! {
 }
 
 ensure_impl_visit! {
-    <'a> fmt::Arguments<'a> {
+    u128: {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+            visitor.visit_u128(*self)
+        }
+    }
+    i128: {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+            visitor.visit_i128(*self)
+        }
+    }
+}
+
+ensure_impl_visit! {
+    impl: { 'a }
+    fmt::Arguments<'a>: {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_fmt(self)
         }
     }
 
-    <'v> super::source::Value<'v> {
+    impl: { 'v }
+    super::source::Value<'v>: {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             use super::private::{ValueInner, value_inner};
 
@@ -256,7 +309,20 @@ ensure_impl_visit! {
     }
 }
 
+ensure_impl_visit! {
+    impl: { T: Value }
+    Option<T>: {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+            match self {
+                Some(v) => v.visit(visitor),
+                None => visitor.visit_none(),
+            }
+        }
+    }
+}
+
 impl EnsureValue for dyn Value {}
+impl<'a> EnsureValue for &'a dyn Value {}
 
 #[cfg(not(feature = "kv_serde"))]
 mod visit_imp {
@@ -543,17 +609,17 @@ mod std_support {
     use std::path::{Path, PathBuf};
 
     ensure_impl_visit! {
-        String {
+        String: {
             fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
                 visitor.visit_str(&*self)
             }
         }
-        Vec<u8> {
+        Vec<u8>: {
             fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
                 visitor.visit_bytes(&*self)
             }
         }
-        Path {
+        Path: {
             fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
                 match self.to_str() {
                     Some(s) => visitor.visit_str(s),
@@ -561,7 +627,7 @@ mod std_support {
                 }
             }
         }
-        PathBuf {
+        PathBuf: {
             fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
                 self.as_path().visit(visitor)
             }
