@@ -125,6 +125,11 @@ impl_to_value! {
             visitor.visit_bool(*self)
         }
     }
+    (): {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+            visitor.visit_none()
+        }
+    }
 }
 
 impl_to_value! {

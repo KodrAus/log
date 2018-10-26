@@ -9,21 +9,11 @@ mod impls;
 #[doc(inline)]
 pub use super::Error;
 
-mod private {
-    use std::fmt;
-
-    #[cfg(not(feature = "kv_serde"))]
-    pub trait Sealed: fmt::Debug { }
-
-    #[cfg(feature = "kv_serde")]
-    pub trait Sealed: fmt::Debug + serde::Serialize { }
-}
-
 /// An arbitrary structured value.
 /// 
 /// **This trait cannot be implemented manually**
 /// 
-/// The `Visit` trait is always implemented for a fixed set of primitives:
+/// The `ToValue` trait is always implemented for a fixed set of primitives:
 /// 
 /// - Standard formats: `Arguments`
 /// - Primitives: `bool`, `char`
@@ -34,15 +24,16 @@ mod private {
 /// - Paths: `Path`, `PathBuf`
 /// 
 /// Any other type that implements `serde::Serialize + std::fmt::Debug` will
-/// automatically implement `Visit` if the `kv_serde` feature is
+/// automatically implement `ToValue` if the `kv_serde` feature is
 /// enabled.
 pub trait ToValue: private::Sealed {
+    /// Perform the conversion.
     fn to_value(&self) -> Value;
 }
 
 /// A serializer for primitive values.
 pub trait Visitor {
-    /// ErasedValue an arbitrary value.
+    /// Visit an arbitrary value.
     /// 
     /// Depending on crate features there are a few things
     /// you can do with a value. You can:
@@ -51,59 +42,58 @@ pub trait Visitor {
     /// - serialize it using `serde`.
     fn visit_any(&mut self, v: Value) -> Result<(), Error>;
 
-    /// ErasedValue a signed integer.
+    /// Visit a signed integer.
     fn visit_i64(&mut self, v: i64) -> Result<(), Error> {
         self.visit_any(v.to_value())
     }
 
-    /// ErasedValue an unsigned integer.
+    /// Visit an unsigned integer.
     fn visit_u64(&mut self, v: u64) -> Result<(), Error> {
         self.visit_any(v.to_value())
     }
 
-    /// ErasedValue a 128bit signed integer.
+    /// Visit a 128bit signed integer.
     fn visit_i128(&mut self, v: i128) -> Result<(), Error> {
         self.visit_any(v.to_value())
     }
 
-    /// ErasedValue a 128bit unsigned integer.
+    /// Visit a 128bit unsigned integer.
     fn visit_u128(&mut self, v: u128) -> Result<(), Error> {
         self.visit_any(v.to_value())
     }
 
-    /// ErasedValue a floating point number.
+    /// Visit a floating point number.
     fn visit_f64(&mut self, v: f64) -> Result<(), Error> {
         self.visit_any(v.to_value())
     }
 
-    /// ErasedValue a boolean.
+    /// Visit a boolean.
     fn visit_bool(&mut self, v: bool) -> Result<(), Error> {
         self.visit_any(v.to_value())
     }
 
-    /// ErasedValue a single character.
+    /// Visit a single character.
     fn visit_char(&mut self, v: char) -> Result<(), Error> {
         let mut b = [0; 4];
         self.visit_str(&*v.encode_utf8(&mut b))
     }
 
-    /// ErasedValue a UTF8 string.
+    /// Visit a UTF8 string.
     fn visit_str(&mut self, v: &str) -> Result<(), Error> {
         self.visit_any((&v).to_value())
     }
 
-    /// ErasedValue a raw byte buffer.
+    /// Visit a raw byte buffer.
     fn visit_bytes(&mut self, v: &[u8]) -> Result<(), Error> {
         self.visit_any((&v).to_value())
     }
 
-    /// ErasedValue standard arguments.
+    /// Visit standard arguments.
     fn visit_none(&mut self) -> Result<(), Error> {
-        let v: Option<Value> = None;
-        self.visit_any(v.to_value())
+        self.visit_any(().to_value())
     }
 
-    /// ErasedValue standard arguments.
+    /// Visit standard arguments.
     fn visit_fmt(&mut self, v: &fmt::Arguments) -> Result<(), Error> {
         self.visit_any(v.to_value())
     }
@@ -171,11 +161,12 @@ enum ValueInner<'v> {
 }
 
 impl<'v> Value<'v> {
+    /// Create a value.
     pub fn new(v: &'v impl ToValue) -> Self {
         v.to_value()
     }
 
-    /// Create a value from an anonymous value.
+    /// Create a value from an anonymous type.
     /// 
     /// The value must be provided with a compatible visit method.
     pub fn any<T>(v: &'v T, visit: fn(&T, &mut dyn Visitor) -> Result<(), Error>) -> Self
@@ -185,6 +176,7 @@ impl<'v> Value<'v> {
         Value(ValueInner::Any(Any::new(v, visit)))
     }
 
+    /// Visit the contents of this value with a visitor.
     pub fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
         match self.0 {
             ValueInner::Erased(v) => v.visit(visitor),
@@ -212,6 +204,12 @@ impl<'v> fmt::Debug for Value<'v> {
                 v.visit(&mut visitor).map_err(|_| fmt::Error)
             }
         }
+    }
+}
+
+impl<'v> fmt::Display for Value<'v> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 
@@ -474,7 +472,7 @@ mod visit_imp {
         }
 
         fn serialize_none(self) -> Result<Self::Ok, Self::Error> {
-            Err(SerdeError::Unsupported)
+            self.0.visit_none().map_err(SerdeError::Other)
         }
 
         fn serialize_some<T>(self, v: &T) -> Result<Self::Ok, Self::Error>
@@ -485,7 +483,7 @@ mod visit_imp {
         }
 
         fn serialize_unit(self) -> Result<Self::Ok, Self::Error> {
-            Err(SerdeError::Unsupported)
+            self.0.visit_none().map_err(SerdeError::Other)
         }
 
         fn serialize_unit_struct(self, _name: &'static str) -> Result<Self::Ok, Self::Error> {
@@ -573,6 +571,16 @@ mod visit_imp {
             Err(SerdeError::Unsupported)
         }
     }
+}
+
+mod private {
+    use std::fmt;
+
+    #[cfg(not(feature = "kv_serde"))]
+    pub trait Sealed: fmt::Debug { }
+
+    #[cfg(feature = "kv_serde")]
+    pub trait Sealed: fmt::Debug + serde::Serialize { }
 }
 
 #[cfg(test)]

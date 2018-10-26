@@ -7,8 +7,7 @@ use std::marker::PhantomData;
 use super::value::ToValue;
 
 #[doc(inline)]
-pub use super::private::Key;
-
+pub use super::key::Key;
 #[doc(inline)]
 pub use super::value::Value;
 
