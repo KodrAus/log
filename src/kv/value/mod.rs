@@ -42,7 +42,7 @@ pub trait ToValue: private::Sealed {
 
 /// A serializer for primitive values.
 pub trait Visitor {
-    /// Visit an arbitrary value.
+    /// ErasedValue an arbitrary value.
     /// 
     /// Depending on crate features there are a few things
     /// you can do with a value. You can:
@@ -51,59 +51,59 @@ pub trait Visitor {
     /// - serialize it using `serde`.
     fn visit_any(&mut self, v: Value) -> Result<(), Error>;
 
-    /// Visit a signed integer.
+    /// ErasedValue a signed integer.
     fn visit_i64(&mut self, v: i64) -> Result<(), Error> {
         self.visit_any(v.to_value())
     }
 
-    /// Visit an unsigned integer.
+    /// ErasedValue an unsigned integer.
     fn visit_u64(&mut self, v: u64) -> Result<(), Error> {
         self.visit_any(v.to_value())
     }
 
-    /// Visit a 128bit signed integer.
+    /// ErasedValue a 128bit signed integer.
     fn visit_i128(&mut self, v: i128) -> Result<(), Error> {
         self.visit_any(v.to_value())
     }
 
-    /// Visit a 128bit unsigned integer.
+    /// ErasedValue a 128bit unsigned integer.
     fn visit_u128(&mut self, v: u128) -> Result<(), Error> {
         self.visit_any(v.to_value())
     }
 
-    /// Visit a floating point number.
+    /// ErasedValue a floating point number.
     fn visit_f64(&mut self, v: f64) -> Result<(), Error> {
         self.visit_any(v.to_value())
     }
 
-    /// Visit a boolean.
+    /// ErasedValue a boolean.
     fn visit_bool(&mut self, v: bool) -> Result<(), Error> {
         self.visit_any(v.to_value())
     }
 
-    /// Visit a single character.
+    /// ErasedValue a single character.
     fn visit_char(&mut self, v: char) -> Result<(), Error> {
         let mut b = [0; 4];
         self.visit_str(&*v.encode_utf8(&mut b))
     }
 
-    /// Visit a UTF8 string.
+    /// ErasedValue a UTF8 string.
     fn visit_str(&mut self, v: &str) -> Result<(), Error> {
         self.visit_any((&v).to_value())
     }
 
-    /// Visit a raw byte buffer.
+    /// ErasedValue a raw byte buffer.
     fn visit_bytes(&mut self, v: &[u8]) -> Result<(), Error> {
         self.visit_any((&v).to_value())
     }
 
-    /// Visit standard arguments.
+    /// ErasedValue standard arguments.
     fn visit_none(&mut self) -> Result<(), Error> {
         let v: Option<Value> = None;
         self.visit_any(v.to_value())
     }
 
-    /// Visit standard arguments.
+    /// ErasedValue standard arguments.
     fn visit_fmt(&mut self, v: &fmt::Arguments) -> Result<(), Error> {
         self.visit_any(v.to_value())
     }
@@ -166,7 +166,7 @@ where
 pub struct Value<'v>(ValueInner<'v>);
 
 enum ValueInner<'v> {
-    Borrowed(&'v dyn Visit),
+    Borrowed(&'v dyn ErasedValue),
     Any(Any<'v>),
 }
 
@@ -198,9 +198,9 @@ impl<'v> fmt::Debug for Value<'v> {
         match self.0 {
             ValueInner::Borrowed(v) => v.fmt(f),
             ValueInner::Any(ref v) => {
-                struct VisitFmt<'a, 'b>(&'a mut fmt::Formatter<'b>);
+                struct ValueFmt<'a, 'b>(&'a mut fmt::Formatter<'b>);
 
-                impl<'a, 'b> Visitor for VisitFmt<'a, 'b> {
+                impl<'a, 'b> Visitor for ValueFmt<'a, 'b> {
                     fn visit_any(&mut self, v: Value) -> Result<(), Error> {
                         write!(self.0, "{:?}", v).map_err(|_| Error::msg("formatting failed"))?;
 
@@ -208,7 +208,7 @@ impl<'v> fmt::Debug for Value<'v> {
                     }
                 }
 
-                let mut visitor = VisitFmt(f);
+                let mut visitor = ValueFmt(f);
                 v.visit(&mut visitor).map_err(|_| fmt::Error)
             }
         }
@@ -256,12 +256,12 @@ impl<'a> Any<'a> {
 }
 
 #[cfg(not(feature = "kv_serde"))]
-trait Visit: fmt::Debug {
+trait ErasedValue: fmt::Debug {
     fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error>;
 }
 
 #[cfg(feature = "kv_serde")]
-trait Visit: fmt::Debug + erased_serde::Serialize {
+trait ErasedValue: fmt::Debug + erased_serde::Serialize {
     fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error>;
 }
 
@@ -269,9 +269,9 @@ trait Visit: fmt::Debug + erased_serde::Serialize {
 mod visit_imp {
     use super::*;
 
-    impl<'a, T: ?Sized> Visit for &'a T
+    impl<'a, T: ?Sized> ErasedValue for &'a T
     where
-        T: Visit,
+        T: ErasedValue,
     {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             (**self).visit(visitor)
@@ -301,7 +301,7 @@ mod visit_imp {
     use erased_serde;
     use serde::{Serialize, Serializer};
 
-    impl<T: ?Sized> Visit for T
+    impl<T: ?Sized> ErasedValue for T
     where
         T: Serialize + fmt::Debug,
     {
@@ -336,12 +336,12 @@ mod visit_imp {
         {
             match self.0 {
                 ValueInner::Any(ref v) => {
-                    struct VisitSerde<S: Serializer> {
+                    struct ErasedValueSerde<S: Serializer> {
                         serializer: Option<S>,
                         ok: Option<S::Ok>,
                     }
 
-                    impl<S> Visitor for VisitSerde<S>
+                    impl<S> Visitor for ErasedValueSerde<S>
                     where
                         S: Serializer,
                     {
@@ -353,7 +353,7 @@ mod visit_imp {
                         }
                     }
 
-                    let mut visitor = VisitSerde {
+                    let mut visitor = ErasedValueSerde {
                         serializer: Some(serializer),
                         ok: None,
                     };

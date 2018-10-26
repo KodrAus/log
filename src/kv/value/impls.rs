@@ -21,7 +21,7 @@ macro_rules! impl_to_value {
                 $($where)* {}
 
             #[cfg(not(feature = "kv_serde"))]
-            impl<$($params)*> Visit for $ty
+            impl<$($params)*> ErasedValue for $ty
             where
                 $($where)*
             {
