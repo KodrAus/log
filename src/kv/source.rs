@@ -4,10 +4,13 @@ use std::fmt;
 use std::borrow::Borrow;
 use std::marker::PhantomData;
 
-use super::value;
+use super::value::ToValue;
 
 #[doc(inline)]
-pub use super::private::{Key, Value};
+pub use super::private::Key;
+
+#[doc(inline)]
+pub use super::value::Value;
 
 #[doc(inline)]
 pub use super::Error;
@@ -174,11 +177,11 @@ pub struct SerializeAsSeq<KVS>(KVS);
 impl<K, V> Source for (K, V)
 where
     K: Borrow<str>,
-    V: value::Value,
+    V: ToValue,
 {
     fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error>
     {
-        visitor.visit_pair(Key::new(&self.0), Value::new(&self.1))
+        visitor.visit_pair(Key::new(&self.0), self.1.to_value())
     }
 }
 
@@ -192,7 +195,6 @@ impl<KVS> Source for [KVS] where KVS: Source {
     }
 }
 
-/// A key value source on a `Record`.
 #[derive(Clone, Copy)]
 pub struct ErasedSource<'a>(&'a dyn ErasedSourceBridge);
 
@@ -309,12 +311,12 @@ mod std_support {
     impl<K, V> Source for BTreeMap<K, V>
     where
         K: Borrow<str> + Ord,
-        V: value::Value,
+        V: ToValue,
     {
         fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error>
         {
             for (k, v) in self {
-                visitor.visit_pair(Key::new(k), Value::new(v))?;
+                visitor.visit_pair(Key::new(k), v.to_value())?;
             }
 
             Ok(())
@@ -324,19 +326,19 @@ mod std_support {
         where
             Q: Borrow<str>,
         {
-            BTreeMap::get(self, key.borrow()).map(|v| Value::new(v))
+            BTreeMap::get(self, key.borrow()).map(|v| v.to_value())
         }
     }
 
     impl<K, V> Source for HashMap<K, V>
     where
         K: Borrow<str> + Eq + Hash,
-        V: value::Value,
+        V: ToValue,
     {
         fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error>
         {
             for (k, v) in self {
-                visitor.visit_pair(Key::new(k), Value::new(v))?;
+                visitor.visit_pair(Key::new(k), v.to_value())?;
             }
 
             Ok(())
@@ -346,7 +348,7 @@ mod std_support {
         where
             Q: Borrow<str>,
         {
-            HashMap::get(self, key.borrow()).map(|v| Value::new(v))
+            HashMap::get(self, key.borrow()).map(|v| v.to_value())
         }
     }
 }

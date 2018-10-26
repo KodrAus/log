@@ -1268,7 +1268,7 @@ pub fn __private_api_log(
     args: fmt::Arguments,
     level: Level,
     &(target, module_path, file, line): &(&str, &str, &str, u32),
-    kvs: &[(&str, &dyn Value)]
+    kvs: &[(&str, Value)]
 ) {
     logger().log(
         &Record::builder()

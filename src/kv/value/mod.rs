@@ -1,9 +1,23 @@
 //! Serialization for structured values.
 
+use std::mem;
 use std::fmt;
+use std::marker::PhantomData;
+
+mod impls;
 
 #[doc(inline)]
 pub use super::Error;
+
+mod private {
+    use std::fmt;
+
+    #[cfg(not(feature = "kv_serde"))]
+    pub trait Sealed: fmt::Debug { }
+
+    #[cfg(feature = "kv_serde")]
+    pub trait Sealed: fmt::Debug + serde::Serialize { }
+}
 
 /// An arbitrary structured value.
 /// 
@@ -22,9 +36,8 @@ pub use super::Error;
 /// Any other type that implements `serde::Serialize + std::fmt::Debug` will
 /// automatically implement `Visit` if the `kv_serde` feature is
 /// enabled.
-pub trait Value: fmt::Debug + visit_imp::ValuePrivate {
-    /// Visit the value with the given serializer.
-    fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error>;
+pub trait ToValue: private::Sealed {
+    fn to_value(&self) -> Value;
 }
 
 /// A serializer for primitive values.
@@ -36,36 +49,36 @@ pub trait Visitor {
     /// 
     /// - format it using `Debug`.
     /// - serialize it using `serde`.
-    fn visit_any(&mut self, v: &dyn Value) -> Result<(), Error>;
+    fn visit_any(&mut self, v: Value) -> Result<(), Error>;
 
     /// Visit a signed integer.
     fn visit_i64(&mut self, v: i64) -> Result<(), Error> {
-        self.visit_any(&v)
+        self.visit_any(v.to_value())
     }
 
     /// Visit an unsigned integer.
     fn visit_u64(&mut self, v: u64) -> Result<(), Error> {
-        self.visit_any(&v)
+        self.visit_any(v.to_value())
     }
 
     /// Visit a 128bit signed integer.
     fn visit_i128(&mut self, v: i128) -> Result<(), Error> {
-        self.visit_any(&v)
+        self.visit_any(v.to_value())
     }
 
     /// Visit a 128bit unsigned integer.
     fn visit_u128(&mut self, v: u128) -> Result<(), Error> {
-        self.visit_any(&v)
+        self.visit_any(v.to_value())
     }
 
     /// Visit a floating point number.
     fn visit_f64(&mut self, v: f64) -> Result<(), Error> {
-        self.visit_any(&v)
+        self.visit_any(v.to_value())
     }
 
     /// Visit a boolean.
     fn visit_bool(&mut self, v: bool) -> Result<(), Error> {
-        self.visit_any(&v)
+        self.visit_any(v.to_value())
     }
 
     /// Visit a single character.
@@ -76,23 +89,23 @@ pub trait Visitor {
 
     /// Visit a UTF8 string.
     fn visit_str(&mut self, v: &str) -> Result<(), Error> {
-        self.visit_any(&v)
+        self.visit_any((&v).to_value())
     }
 
     /// Visit a raw byte buffer.
     fn visit_bytes(&mut self, v: &[u8]) -> Result<(), Error> {
-        self.visit_any(&v)
+        self.visit_any((&v).to_value())
     }
 
     /// Visit standard arguments.
     fn visit_none(&mut self) -> Result<(), Error> {
-        let v: Option<&dyn Value> = None;
-        self.visit_any(&v)
+        let v: Option<Value> = None;
+        self.visit_any(v.to_value())
     }
 
     /// Visit standard arguments.
     fn visit_fmt(&mut self, v: &fmt::Arguments) -> Result<(), Error> {
-        self.visit_any(&v)
+        self.visit_any(v.to_value())
     }
 }
 
@@ -100,7 +113,7 @@ impl<'a, T: ?Sized> Visitor for &'a mut T
 where
     T: Visitor,
 {
-    fn visit_any(&mut self, v: &dyn Value) -> Result<(), Error> {
+    fn visit_any(&mut self, v: Value) -> Result<(), Error> {
         (**self).visit_any(v)
     }
 
@@ -149,200 +162,134 @@ where
     }
 }
 
-/// This trait is a private implementation detail for testing.
-/// 
-/// All it does is make sure that our set of concrete types
-/// that implement `Visit` always implement the `Visit` trait,
-/// regardless of crate features and blanket implementations.
-trait EnsureValue: Value {}
+/// The value in a key-value pair.
+pub struct Value<'v>(ValueInner<'v>);
 
-macro_rules! ensure_impl_visit {
-    ($(impl: { $($params:tt)* }
-       where: { $($where:tt)* }
-       $ty:ty: { $($serialize:tt)* })*
-    ) => {
-        $(
-            impl<$($params)*> EnsureValue for $ty
-            where
-                $($where)* {}
-            impl<'ensure_visit, $($params)*> EnsureValue for &'ensure_visit $ty
-            where
-                $($where)* {}
+enum ValueInner<'v> {
+    Borrowed(&'v dyn Visit),
+    Any(Any<'v>),
+}
 
-            #[cfg(not(feature = "kv_serde"))]
-            impl<$($params)*> Value for $ty
-            where
-                $($where)*
-            {
-                $($serialize)*
-            }
+impl<'v> Value<'v> {
+    pub fn new(v: &'v impl ToValue) -> Self {
+        v.to_value()
+    }
 
-            #[cfg(not(feature = "kv_serde"))]
-            impl<$($params)*> visit_imp::ValuePrivate for $ty
-                where
-                    $($where)* {}
-        )*
-    };
-    ($(impl: { $($params:tt)* }
-       $ty:ty: { $($serialize:tt)* })*
-    ) => {
-        ensure_impl_visit! {
-            $(impl: {$($params)*} where: {} $ty: { $($serialize)* })*
-        }
-    };
-    ($($ty:ty: { $($serialize:tt)* })*) => {
-        ensure_impl_visit! {
-            $(impl: {} where: {} $ty: { $($serialize)* })*
+    /// Create a value from an anonymous value.
+    /// 
+    /// The value must be provided with a compatible visit method.
+    pub fn any<T>(v: &'v T, visit: fn(&T, &mut dyn Visitor) -> Result<(), Error>) -> Self
+    where
+        T: 'static,
+    {
+        Value(ValueInner::Any(Any::new(v, visit)))
+    }
+
+    pub fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+        match self.0 {
+            ValueInner::Borrowed(v) => v.visit(visitor),
+            ValueInner::Any(ref v) => v.visit(visitor),
         }
     }
 }
 
-ensure_impl_visit! {
-    u8: {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            visitor.visit_u64(*self as u64)
-        }
-    }
-    u16: {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            visitor.visit_u64(*self as u64)
-        }
-    }
-    u32: {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            visitor.visit_u64(*self as u64)
-        }
-    }
-    u64: {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            visitor.visit_u64(*self)
-        }
-    }
+impl<'v> fmt::Debug for Value<'v> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.0 {
+            ValueInner::Borrowed(v) => v.fmt(f),
+            ValueInner::Any(ref v) => {
+                struct VisitFmt<'a, 'b>(&'a mut fmt::Formatter<'b>);
 
-    i8: {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            visitor.visit_i64(*self as i64)
-        }
-    }
-    i16: {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            visitor.visit_i64(*self as i64)
-        }
-    }
-    i32: {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            visitor.visit_i64(*self as i64)
-        }
-    }
-    i64: {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            visitor.visit_i64(*self)
-        }
-    }
+                impl<'a, 'b> Visitor for VisitFmt<'a, 'b> {
+                    fn visit_any(&mut self, v: Value) -> Result<(), Error> {
+                        write!(self.0, "{:?}", v).map_err(|_| Error::msg("formatting failed"))?;
 
-    f32: {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            visitor.visit_f64(*self as f64)
-        }
-    }
-    f64: {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            visitor.visit_f64(*self)
-        }
-    }
+                        Ok(())
+                    }
+                }
 
-    char: {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            visitor.visit_char(*self)
-        }
-    }
-    bool: {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            visitor.visit_bool(*self)
-        }
-    }
-    str: {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            visitor.visit_str(self)
-        }
-    }
-    [u8]: {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            visitor.visit_bytes(self)
-        }
-    }
-}
-
-ensure_impl_visit! {
-    u128: {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            visitor.visit_u128(*self)
-        }
-    }
-    i128: {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            visitor.visit_i128(*self)
-        }
-    }
-}
-
-ensure_impl_visit! {
-    impl: { 'a }
-    fmt::Arguments<'a>: {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            visitor.visit_fmt(self)
-        }
-    }
-
-    impl: { 'v }
-    super::source::Value<'v>: {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            use super::private::{ValueInner, value_inner};
-
-            match value_inner(self) {
-                ValueInner::Borrowed(v) => v.visit(visitor),
-                ValueInner::Any(v) => v.visit(visitor),
-                #[cfg(feature = "std")]
-                ValueInner::Owned(ref v) => v.visit(visitor),
+                let mut visitor = VisitFmt(f);
+                v.visit(&mut visitor).map_err(|_| fmt::Error)
             }
         }
     }
 }
 
-ensure_impl_visit! {
-    impl: { T: Value }
-    Option<T>: {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            match self {
-                Some(v) => v.visit(visitor),
-                None => visitor.visit_none(),
+// Pinched from `libstd::fmt`
+
+struct Void {
+    _priv: (),
+    /// Erases all oibits, because `Void` erases the type of the object that
+    /// will be used to produce formatted output. Since we do not know what
+    /// oibits the real types have (and they can have any or none), we need to
+    /// take the most conservative approach and forbid all oibits.
+    ///
+    /// It was added after #45197 showed that one could share a `!Sync`
+    /// object across threads by passing it into `format_args!`.
+    _oibit_remover: PhantomData<*mut dyn Fn()>,
+}
+
+struct Any<'a> {
+    data: &'a Void,
+    visit: fn(&Void, &mut dyn Visitor) -> Result<(), Error>,
+}
+
+impl<'a> Any<'a> {
+    pub fn new<T>(data: &'a T, visit: fn(&T, &mut dyn Visitor) -> Result<(), Error>) -> Self
+    where
+        T: 'static,
+    {
+        unsafe {
+            Any {
+                data: mem::transmute::<&'a T, &'a Void>(data),
+                visit: mem::transmute::<
+                    fn(&T, &mut dyn Visitor) -> Result<(), Error>,
+                    fn(&Void, &mut dyn Visitor) -> Result<(), Error>>
+                    (visit),
             }
         }
     }
+
+    pub fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+        (self.visit)(self.data, visitor)
+    }
 }
 
-impl EnsureValue for dyn Value {}
-impl<'a> EnsureValue for &'a dyn Value {}
+#[cfg(not(feature = "kv_serde"))]
+trait Visit: fmt::Debug {
+    fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error>;
+}
+
+#[cfg(feature = "kv_serde")]
+trait Visit: fmt::Debug + erased_serde::Serialize {
+    fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error>;
+}
 
 #[cfg(not(feature = "kv_serde"))]
 mod visit_imp {
     use super::*;
 
-    #[doc(hidden)]
-    pub trait ValuePrivate {}
-
-    impl<'a, T: ?Sized> Value for &'a T
+    impl<'a, T: ?Sized> Visit for &'a T
     where
-        T: Value,
+        T: Visit,
     {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             (**self).visit(visitor)
         }
     }
 
-    impl<'a, T: ?Sized> ValuePrivate for &'a T
+    impl<'a, T> ToValue for &'a T
     where
-        T: Value,
+        T: ToValue,
+    {
+        fn to_value(&self) -> Value {
+            (**self).to_value()
+        }
+    }
+
+    impl<'a, T: ?Sized> private::Sealed for &'a T
+    where
+        T: ToValue,
     {
     }
 }
@@ -354,10 +301,7 @@ mod visit_imp {
     use erased_serde;
     use serde::{Serialize, Serializer};
 
-    #[doc(hidden)]
-    pub trait ValuePrivate: erased_serde::Serialize {}
- 
-    impl<T: ?Sized> Value for T
+    impl<T: ?Sized> Visit for T
     where
         T: Serialize + fmt::Debug,
     {
@@ -370,10 +314,58 @@ mod visit_imp {
         }
     }
 
-    impl<T: ?Sized> ValuePrivate for T
+    impl<T> ToValue for T
     where
         T: Serialize + fmt::Debug,
     {
+        fn to_value(&self) -> Value {
+            Value(ValueInner::Borrowed(self))
+        }
+    }
+
+    impl<T: ?Sized> private::Sealed for T
+    where
+        T: Serialize + fmt::Debug,
+    {
+    }
+
+    impl<'v> Serialize for Value<'v> {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            match self.0 {
+                ValueInner::Any(ref v) => {
+                    struct VisitSerde<S: Serializer> {
+                        serializer: Option<S>,
+                        ok: Option<S::Ok>,
+                    }
+
+                    impl<S> Visitor for VisitSerde<S>
+                    where
+                        S: Serializer,
+                    {
+                        fn visit_any(&mut self, v: Value) -> Result<(), Error> {
+                            let ok = v.serialize(self.serializer.take().expect("missing serializer"))?;
+                            self.ok = Some(ok);
+
+                            Ok(())
+                        }
+                    }
+
+                    let mut visitor = VisitSerde {
+                        serializer: Some(serializer),
+                        ok: None,
+                    };
+
+                    v.visit(&mut visitor).map_err(|e| e.into_serde())?;
+                    Ok(visitor.ok.expect("missing return value"))
+                },
+                ValueInner::Borrowed(v) => {
+                    erased_serde::serialize(v, serializer)
+                },
+            }
+        }
     }
 
     struct SerdeBridge<'a>(&'a mut dyn Visitor);
@@ -582,61 +574,6 @@ mod visit_imp {
         }
     }
 }
-
-#[cfg(feature = "kv_serde")]
-mod serde_support {
-    use super::*;
-
-    use serde::{Serialize, Serializer};
-
-    impl<'a> Serialize for dyn Value + 'a {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            erased_serde::serialize(self, serializer)
-        }
-    }
-}
-
-#[cfg(feature = "kv_serde")]
-pub use self::serde_support::*;
-
-#[cfg(feature = "std")]
-mod std_support {
-    use super::*;
-
-    use std::path::{Path, PathBuf};
-
-    ensure_impl_visit! {
-        String: {
-            fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-                visitor.visit_str(&*self)
-            }
-        }
-        Vec<u8>: {
-            fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-                visitor.visit_bytes(&*self)
-            }
-        }
-        Path: {
-            fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-                match self.to_str() {
-                    Some(s) => visitor.visit_str(s),
-                    None => visitor.visit_fmt(&format_args!("{:?}", self)),
-                }
-            }
-        }
-        PathBuf: {
-            fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-                self.as_path().visit(visitor)
-            }
-        }
-    }
-}
-
-#[cfg(feature = "std")]
-pub use self::std_support::*;
 
 #[cfg(test)]
 mod tests {
