@@ -166,7 +166,7 @@ where
 pub struct Value<'v>(ValueInner<'v>);
 
 enum ValueInner<'v> {
-    Borrowed(&'v dyn ErasedValue),
+    Erased(&'v dyn ErasedValue),
     Any(Any<'v>),
 }
 
@@ -187,7 +187,7 @@ impl<'v> Value<'v> {
 
     pub fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
         match self.0 {
-            ValueInner::Borrowed(v) => v.visit(visitor),
+            ValueInner::Erased(v) => v.visit(visitor),
             ValueInner::Any(ref v) => v.visit(visitor),
         }
     }
@@ -196,7 +196,7 @@ impl<'v> Value<'v> {
 impl<'v> fmt::Debug for Value<'v> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.0 {
-            ValueInner::Borrowed(v) => v.fmt(f),
+            ValueInner::Erased(v) => v.fmt(f),
             ValueInner::Any(ref v) => {
                 struct ValueFmt<'a, 'b>(&'a mut fmt::Formatter<'b>);
 
@@ -319,7 +319,7 @@ mod visit_imp {
         T: Serialize + fmt::Debug,
     {
         fn to_value(&self) -> Value {
-            Value(ValueInner::Borrowed(self))
+            Value(ValueInner::Erased(self))
         }
     }
 
@@ -361,7 +361,7 @@ mod visit_imp {
                     v.visit(&mut visitor).map_err(|e| e.into_serde())?;
                     Ok(visitor.ok.expect("missing return value"))
                 },
-                ValueInner::Borrowed(v) => {
+                ValueInner::Erased(v) => {
                     erased_serde::serialize(v, serializer)
                 },
             }

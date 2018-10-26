@@ -37,7 +37,7 @@ macro_rules! impl_to_value {
                 where
                     Self: Sized,
                 {
-                    Value(ValueInner::Borrowed(self))
+                    Value(ValueInner::Erased(self))
                 }
             }
 
