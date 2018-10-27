@@ -5,7 +5,7 @@ use super::*;
 /// All it does is make sure that our set of concrete types
 /// that implement `Visit` always implement the `Visit` trait,
 /// regardless of crate features and blanket implementations.
-trait EnsureToValue: ToValue {}
+trait EnsureVisit: Visit {}
 
 macro_rules! impl_to_value {
     ($(impl: { $($params:tt)* }
@@ -13,32 +13,19 @@ macro_rules! impl_to_value {
        $ty:ty: { $($serialize:tt)* })*
     ) => {
         $(
-            impl<$($params)*> EnsureToValue for $ty
+            impl<$($params)*> EnsureVisit for $ty
             where
                 $($where)* {}
-            impl<'ensure_visit, $($params)*> EnsureToValue for &'ensure_visit $ty
+            impl<'ensure_visit, $($params)*> EnsureVisit for &'ensure_visit $ty
             where
                 $($where)* {}
 
             #[cfg(not(feature = "kv_serde"))]
-            impl<$($params)*> ErasedValue for $ty
+            impl<$($params)*> Visit for $ty
             where
                 $($where)*
             {
                 $($serialize)*
-            }
-
-            #[cfg(not(feature = "kv_serde"))]
-            impl<$($params)*> ToValue for $ty
-            where
-                $($where)*
-            {
-                fn to_value(&self) -> Value
-                where
-                    Self: Sized,
-                {
-                    Value(ValueInner::Erased(self))
-                }
             }
 
             #[cfg(not(feature = "kv_serde"))]
@@ -174,7 +161,7 @@ impl_to_value! {
         }
     }
     
-    impl: { T: ToValue }
+    impl: { T: Visit }
     Option<T>: {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             match self {

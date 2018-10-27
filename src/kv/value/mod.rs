@@ -13,7 +13,7 @@ pub use super::Error;
 /// 
 /// **This trait cannot be implemented manually**
 /// 
-/// The `ToValue` trait is always implemented for a fixed set of primitives:
+/// The `Visit` trait is always implemented for a fixed set of primitives:
 /// 
 /// - Standard formats: `Arguments`
 /// - Primitives: `bool`, `char`
@@ -24,11 +24,18 @@ pub use super::Error;
 /// - Paths: `Path`, `PathBuf`
 /// 
 /// Any other type that implements `serde::Serialize + std::fmt::Debug` will
-/// automatically implement `ToValue` if the `kv_serde` feature is
+/// automatically implement `Visit` if the `kv_serde` feature is
 /// enabled.
-pub trait ToValue: private::Sealed {
-    /// Perform the conversion.
-    fn to_value(&self) -> Value;
+pub trait Visit: private::Sealed {
+    /// Visit this value.
+    fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error>;
+
+    fn to_value(&self) -> Value
+    where
+        Self: Sized,
+    {
+        Value::new(self)
+    }
 }
 
 /// A serializer for primitive values.
@@ -156,14 +163,14 @@ where
 pub struct Value<'v>(ValueInner<'v>);
 
 enum ValueInner<'v> {
-    Erased(&'v dyn ErasedValue),
+    Erased(&'v dyn ErasedVisit),
     Any(Any<'v>),
 }
 
 impl<'v> Value<'v> {
     /// Create a value.
-    pub fn new(v: &'v impl ToValue) -> Self {
-        v.to_value()
+    pub fn new(v: &'v impl Visit) -> Self {
+        Value(ValueInner::Erased(v))
     }
 
     /// Create a value from an anonymous type.
@@ -179,7 +186,7 @@ impl<'v> Value<'v> {
     /// Visit the contents of this value with a visitor.
     pub fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
         match self.0 {
-            ValueInner::Erased(v) => v.visit(visitor),
+            ValueInner::Erased(v) => v.erased_visit(visitor),
             ValueInner::Any(ref v) => v.visit(visitor),
         }
     }
@@ -254,40 +261,40 @@ impl<'a> Any<'a> {
 }
 
 #[cfg(not(feature = "kv_serde"))]
-trait ErasedValue: fmt::Debug {
-    fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error>;
+trait ErasedVisit: fmt::Debug {
+    fn erased_visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error>;
 }
 
 #[cfg(feature = "kv_serde")]
-trait ErasedValue: fmt::Debug + erased_serde::Serialize {
-    fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error>;
+trait ErasedVisit: fmt::Debug + erased_serde::Serialize {
+    fn erased_visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error>;
+}
+
+impl<T: ?Sized> ErasedVisit for T
+where
+    T: Visit,
+{
+    fn erased_visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+        self.visit(visitor)
+    }
 }
 
 #[cfg(not(feature = "kv_serde"))]
 mod visit_imp {
     use super::*;
 
-    impl<'a, T: ?Sized> ErasedValue for &'a T
+    impl<'a, T: ?Sized> Visit for &'a T
     where
-        T: ErasedValue,
+        T: Visit,
     {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             (**self).visit(visitor)
         }
     }
 
-    impl<'a, T> ToValue for &'a T
-    where
-        T: ToValue,
-    {
-        fn to_value(&self) -> Value {
-            (**self).to_value()
-        }
-    }
-
     impl<'a, T: ?Sized> private::Sealed for &'a T
     where
-        T: ToValue,
+        T: Visit,
     {
     }
 }
@@ -299,7 +306,7 @@ mod visit_imp {
     use erased_serde;
     use serde::{Serialize, Serializer};
 
-    impl<T: ?Sized> ErasedValue for T
+    impl<T: ?Sized> Visit for T
     where
         T: Serialize + fmt::Debug,
     {
@@ -309,15 +316,6 @@ mod visit_imp {
                 Err(SerdeError::Other(e)) => Err(e),
                 Ok(()) => Ok(())
             }
-        }
-    }
-
-    impl<T> ToValue for T
-    where
-        T: Serialize + fmt::Debug,
-    {
-        fn to_value(&self) -> Value {
-            Value(ValueInner::Erased(self))
         }
     }
 
@@ -334,12 +332,12 @@ mod visit_imp {
         {
             match self.0 {
                 ValueInner::Any(ref v) => {
-                    struct ErasedValueSerde<S: Serializer> {
+                    struct ErasedVisitSerde<S: Serializer> {
                         serializer: Option<S>,
                         ok: Option<S::Ok>,
                     }
 
-                    impl<S> Visitor for ErasedValueSerde<S>
+                    impl<S> Visitor for ErasedVisitSerde<S>
                     where
                         S: Serializer,
                     {
@@ -351,7 +349,7 @@ mod visit_imp {
                         }
                     }
 
-                    let mut visitor = ErasedValueSerde {
+                    let mut visitor = ErasedVisitSerde {
                         serializer: Some(serializer),
                         ok: None,
                     };

@@ -4,7 +4,7 @@ use std::fmt;
 use std::borrow::Borrow;
 use std::marker::PhantomData;
 
-use super::value::ToValue;
+use super::value::Visit;
 
 #[doc(inline)]
 pub use super::key::Key;
@@ -176,7 +176,7 @@ pub struct SerializeAsSeq<KVS>(KVS);
 impl<K, V> Source for (K, V)
 where
     K: Borrow<str>,
-    V: ToValue,
+    V: Visit,
 {
     fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error>
     {
@@ -310,7 +310,7 @@ mod std_support {
     impl<K, V> Source for BTreeMap<K, V>
     where
         K: Borrow<str> + Ord,
-        V: ToValue,
+        V: Visit,
     {
         fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error>
         {
@@ -332,7 +332,7 @@ mod std_support {
     impl<K, V> Source for HashMap<K, V>
     where
         K: Borrow<str> + Eq + Hash,
-        V: ToValue,
+        V: Visit,
     {
         fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error>
         {

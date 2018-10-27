@@ -140,7 +140,7 @@ macro_rules! properties(
             stream: [$($stream)*],
             tokens: [
                 $($tokens)*
-                (stringify!($key), $crate::kv::value::ToValue::to_value(&$key)),
+                (stringify!($key), $crate::kv::value::Visit::to_value(&$key)),
             ],
             kvs_ident: $kvs_ident
         });
