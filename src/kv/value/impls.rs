@@ -8,42 +8,63 @@ use super::*;
 trait EnsureVisit: Visit {}
 
 macro_rules! impl_to_value {
-    ($(impl: { $($params:tt)* }
-       where: { $($where:tt)* }
-       $ty:ty: { $($serialize:tt)* })*
+    () => {};
+    (
+        impl: {
+            $($params:tt)*
+        }
+        where: {
+            $($where:tt)*
+        }
+        $ty:ty: {
+            $($serialize:tt)*
+        }
+        $($rest:tt)*
     ) => {
-        $(
-            impl<$($params)*> EnsureVisit for $ty
-            where
-                $($where)* {}
-            impl<'ensure_visit, $($params)*> EnsureVisit for &'ensure_visit $ty
-            where
-                $($where)* {}
+        impl<$($params)*> EnsureVisit for $ty
+        where
+            $($where)* {}
+        
+        impl<'ensure_visit, $($params)*> EnsureVisit for &'ensure_visit $ty
+        where
+            $($where)* {}
+        
+        #[cfg(not(feature = "kv_serde"))]
+        impl<$($params)*> private::Sealed for $ty
+        where
+            $($where)* {}
 
-            #[cfg(not(feature = "kv_serde"))]
-            impl<$($params)*> Visit for $ty
-            where
-                $($where)*
-            {
-                $($serialize)*
-            }
+        #[cfg(not(feature = "kv_serde"))]
+        impl<$($params)*> Visit for $ty
+        where
+            $($where)*
+        {
+            $($serialize)*
+        }
 
-            #[cfg(not(feature = "kv_serde"))]
-            impl<$($params)*> private::Sealed for $ty
-                where
-                    $($where)* {}
-        )*
+        impl_to_value!($($rest)*);
     };
-    ($(impl: { $($params:tt)* }
-       $ty:ty: { $($serialize:tt)* })*
+    (
+        impl: {
+            $($params:tt)*
+        }
+        $ty:ty: {
+            $($serialize:tt)*
+        } 
+        $($rest:tt)*
     ) => {
         impl_to_value! {
-            $(impl: {$($params)*} where: {} $ty: { $($serialize)* })*
+            impl: {$($params)*} where: {} $ty: { $($serialize)* } $($rest)*
         }
     };
-    ($($ty:ty: { $($serialize:tt)* })*) => {
+    (
+        $ty:ty: {
+            $($serialize:tt)*
+        } 
+        $($rest:tt)*
+    ) => {
         impl_to_value! {
-            $(impl: {} where: {} $ty: { $($serialize)* })*
+            impl: {} where: {} $ty: { $($serialize)* } $($rest)*
         }
     }
 }
@@ -107,18 +128,54 @@ impl_to_value! {
             visitor.visit_char(*self)
         }
     }
+
     bool: {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_bool(*self)
         }
     }
+    
     (): {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_none()
         }
     }
+
+    impl: { 'a } &'a str: {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+            visitor.visit_str(self)
+        }
+    }
+
+    impl: { 'a } &'a [u8]: {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+            visitor.visit_bytes(self)
+        }
+    }
+
+    impl: { 'a } fmt::Arguments<'a>: {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+            visitor.visit_fmt(self)
+        }
+    }
+
+    impl: { 'v } Value<'v>: {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+            self.visit(visitor)
+        }
+    }
+    
+    impl: { T: Visit } Option<T>: {
+        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+            match self {
+                Some(v) => v.to_value().visit(visitor),
+                None => visitor.visit_none(),
+            }
+        }
+    }
 }
 
+#[cfg(feature = "i128")]
 impl_to_value! {
     u128: {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
@@ -128,46 +185,6 @@ impl_to_value! {
     i128: {
         fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
             visitor.visit_i128(*self)
-        }
-    }
-}
-
-impl_to_value! {
-    impl: { 'a }
-    &'a str: {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            visitor.visit_str(self)
-        }
-    }
-
-    impl: { 'a }
-    &'a [u8]: {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            visitor.visit_bytes(self)
-        }
-    }
-
-    impl: { 'a }
-    fmt::Arguments<'a>: {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            visitor.visit_fmt(self)
-        }
-    }
-
-    impl: { 'v }
-    Value<'v>: {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            self.visit(visitor)
-        }
-    }
-    
-    impl: { T: Visit }
-    Option<T>: {
-        fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-            match self {
-                Some(v) => v.to_value().visit(visitor),
-                None => visitor.visit_none(),
-            }
         }
     }
 }
@@ -184,26 +201,24 @@ mod std_support {
                 visitor.visit_str(&*self)
             }
         }
+
         Vec<u8>: {
             fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
                 visitor.visit_bytes(&*self)
             }
         }
-        PathBuf: {
-            fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-                self.as_path().visit(visitor)
-            }
-        }
-    }
 
-    impl_to_value! {
-        impl: { 'a }
-        &'a Path: {
+        impl: { 'a } &'a Path: {
             fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
                 match self.to_str() {
                     Some(s) => visitor.visit_str(s),
                     None => visitor.visit_fmt(&format_args!("{:?}", self)),
                 }
+            }
+        }
+        PathBuf: {
+            fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+                self.as_path().visit(visitor)
             }
         }
     }

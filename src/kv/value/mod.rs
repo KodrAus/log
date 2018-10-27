@@ -30,6 +30,7 @@ pub trait Visit: private::Sealed {
     /// Visit this value.
     fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error>;
 
+    /// Convert a reference to this value into an erased `Value`.
     fn to_value(&self) -> Value
     where
         Self: Sized,
@@ -60,11 +61,13 @@ pub trait Visitor {
     }
 
     /// Visit a 128bit signed integer.
+    #[cfg(feature = "i128")]
     fn visit_i128(&mut self, v: i128) -> Result<(), Error> {
         self.visit_any(v.to_value())
     }
 
     /// Visit a 128bit unsigned integer.
+    #[cfg(feature = "i128")]
     fn visit_u128(&mut self, v: u128) -> Result<(), Error> {
         self.visit_any(v.to_value())
     }
@@ -122,10 +125,12 @@ where
         (**self).visit_u64(v)
     }
 
+    #[cfg(feature = "i128")]
     fn visit_i128(&mut self, v: i128) -> Result<(), Error> {
         (**self).visit_i128(v)
     }
 
+    #[cfg(feature = "i128")]
     fn visit_u128(&mut self, v: u128) -> Result<(), Error> {
         (**self).visit_u128(v)
     }
