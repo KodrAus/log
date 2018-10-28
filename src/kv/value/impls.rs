@@ -7,25 +7,17 @@ use super::*;
 /// regardless of crate features and blanket implementations.
 trait EnsureVisit: Visit {}
 
+impl<'a, T> EnsureVisit for &'a T where T: Visit {}
+
 macro_rules! impl_to_value {
     () => {};
     (
-        impl: {
-            $($params:tt)*
-        }
-        where: {
-            $($where:tt)*
-        }
-        $ty:ty: {
-            $($serialize:tt)*
-        }
+        impl: { $($params:tt)* }
+        where: { $($where:tt)* }
+        $ty:ty: { $($serialize:tt)* }
         $($rest:tt)*
     ) => {
         impl<$($params)*> EnsureVisit for $ty
-        where
-            $($where)* {}
-        
-        impl<'ensure_visit, $($params)*> EnsureVisit for &'ensure_visit $ty
         where
             $($where)* {}
         
@@ -45,12 +37,8 @@ macro_rules! impl_to_value {
         impl_to_value!($($rest)*);
     };
     (
-        impl: {
-            $($params:tt)*
-        }
-        $ty:ty: {
-            $($serialize:tt)*
-        } 
+        impl: { $($params:tt)* }
+        $ty:ty: { $($serialize:tt)* } 
         $($rest:tt)*
     ) => {
         impl_to_value! {
@@ -58,9 +46,7 @@ macro_rules! impl_to_value {
         }
     };
     (
-        $ty:ty: {
-            $($serialize:tt)*
-        } 
+        $ty:ty: { $($serialize:tt)* } 
         $($rest:tt)*
     ) => {
         impl_to_value! {
