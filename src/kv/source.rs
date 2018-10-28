@@ -298,8 +298,28 @@ pub use self::serde_support::*;
 mod std_support {
     use super::*;
 
+    use std::sync::Arc;
+    use std::rc::Rc;
     use std::hash::Hash;
     use std::collections::{HashMap, BTreeMap};
+
+    impl<KVS: ?Sized> Source for Box<KVS> where KVS: Source {
+        fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error> {
+            (**self).visit(visitor)
+        }
+    }
+
+    impl<KVS: ?Sized> Source for Arc<KVS> where KVS: Source  {
+        fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error> {
+            (**self).visit(visitor)
+        }
+    }
+
+    impl<KVS: ?Sized> Source for Rc<KVS> where KVS: Source  {
+        fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error> {
+            (**self).visit(visitor)
+        }
+    }
 
     impl<KVS> Source for Vec<KVS> where KVS: Source {
         fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error> {

@@ -207,5 +207,11 @@ mod std_support {
                 self.as_path().visit(visitor)
             }
         }
+
+        impl: { T: Visit + ?Sized } Box<T>: {
+            fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
+                (**self).visit(visitor)
+            }
+        }
     }
 }
