@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["Error","An error encountered while visiting a key-value source."],["Value","The value in a key-value pair."]],"trait":[["Visit","An arbitrary structured value."],["Visitor","A serializer for primitive values."]]});

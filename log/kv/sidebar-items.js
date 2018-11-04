@@ -1,0 +1,1 @@
+initSidebarItems({"mod":[["source","Sources of structured key-value pairs."],["value","Serialization for structured values."]],"struct":[["Error","An error encountered while visiting a key-value source."]],"trait":[["Source","A source for key value pairs that can be serialized."]]});
