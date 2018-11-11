@@ -22,10 +22,17 @@ pub use super::Error;
 /// - Strings: `&str`, `String`
 /// - Bytes: `&[u8]`, `Vec<u8>`
 /// - Paths: `Path`, `PathBuf`
+/// - `Option<T: Visit>`
+/// - `&'a T: Visit`
 /// 
 /// Any other type that implements `serde::Serialize + std::fmt::Debug` will
 /// automatically implement `Visit` if the `kv_serde` feature is
 /// enabled.
+/// 
+/// # Implementing `Visit`
+/// 
+/// `Visit` can be implemented for datastructures by implementing `serde::Serialize`
+/// and `std::fmt::Debug`.
 pub trait Visit: private::Sealed {
     /// Visit this value.
     fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error>;
@@ -311,6 +318,11 @@ mod visit_imp {
     use erased_serde;
     use serde::{Serialize, Serializer};
 
+    /// `Visit` is implemented for most datastructures that implement `Serialize`.
+    /// 
+    /// This impl block is only available when the `kv_serde` feature is enabled.
+    /// Without this feature, `Visit` is implemented for common types from the
+    /// standard library.
     impl<T: ?Sized> Visit for T
     where
         T: Serialize + fmt::Debug,
@@ -382,7 +394,7 @@ mod visit_imp {
         where
             T: std::fmt::Display
         {
-            SerdeError::Unsupported
+            SerdeError::Other(Error::msg("serialization failed"))
         }
     }
 
