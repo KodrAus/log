@@ -194,6 +194,7 @@ impl<KVS> Source for [KVS] where KVS: Source {
     }
 }
 
+/// An erased `Source`.
 #[derive(Clone, Copy)]
 pub struct ErasedSource<'a>(&'a dyn ErasedSourceBridge);
 

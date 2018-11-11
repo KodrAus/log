@@ -72,7 +72,7 @@ pub use self::serde_support::*;
 mod std_support {
     use super::*;
 
-    use std::error;
+    use std::{io, error};
 
     impl Error {
         /// Get a reference to a standard error.
@@ -83,6 +83,11 @@ mod std_support {
         /// Convert into a standard error.
         pub fn into_error(self) -> Box<dyn error::Error + Send + Sync> {
             Box::new(self.0)
+        }
+
+        /// Convert into an io error.
+        pub fn into_io_error(self) -> io::Error {
+            io::Error::new(io::ErrorKind::Other, self.into_error())
         }
     }
 
@@ -104,6 +109,12 @@ mod std_support {
     impl From<Error> for Box<dyn error::Error + Send + Sync> {
         fn from(err: Error) -> Self {
             err.into_error()
+        }
+    }
+
+    impl From<Error> for io::Error {
+        fn from(err: Error) -> Self {
+            err.into_io_error()
         }
     }
 

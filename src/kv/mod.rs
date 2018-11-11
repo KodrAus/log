@@ -12,4 +12,4 @@ pub mod source;
 pub use self::error::Error;
 
 #[doc(inline)]
-pub use self::source::Source;
+pub use self::source::{Source, Key, Value};
