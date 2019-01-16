@@ -4,7 +4,7 @@ use std::fmt;
 use std::borrow::Borrow;
 use std::marker::PhantomData;
 
-use super::value::Visit;
+use super::value::ToValue;
 
 #[doc(inline)]
 pub use super::key::Key;
@@ -37,6 +37,7 @@ pub trait Source {
     /// Implementors are encouraged provide a more efficient version
     /// if they can. Standard collections like `BTreeMap` and `HashMap`
     /// will do an indexed lookup instead of a scan.
+    // TODO: Rename to `find` (so that a `get` method could use an index)?
     fn get<'kvs, Q>(&'kvs self, key: Q) -> Option<Value<'kvs>>
     where
         Q: Borrow<str>,
@@ -176,7 +177,7 @@ pub struct SerializeAsSeq<KVS>(KVS);
 impl<K, V> Source for (K, V)
 where
     K: Borrow<str>,
-    V: Visit,
+    V: ToValue,
 {
     fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error>
     {
@@ -331,7 +332,7 @@ mod std_support {
     impl<K, V> Source for BTreeMap<K, V>
     where
         K: Borrow<str> + Ord,
-        V: Visit,
+        V: ToValue,
     {
         fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error>
         {
@@ -353,7 +354,7 @@ mod std_support {
     impl<K, V> Source for HashMap<K, V>
     where
         K: Borrow<str> + Eq + Hash,
-        V: Visit,
+        V: ToValue,
     {
         fn visit<'kvs>(&'kvs self, visitor: &mut dyn Visitor<'kvs>) -> Result<(), Error>
         {

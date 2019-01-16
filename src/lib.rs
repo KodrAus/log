@@ -287,6 +287,9 @@ extern crate erased_serde;
 #[cfg(feature = "serde")]
 extern crate serde;
 
+#[cfg(feature = "sval")]
+extern crate sval;
+
 #[macro_use]
 extern crate cfg_if;
 
