@@ -264,8 +264,8 @@ mod sval_support {
             self.0
                 .by_ref()
                 .try_for_each(|k, v| {
-                    stream.map_key(k)?;
-                    stream.map_value(v)
+                    stream.map_key(k).map_err(|_| Error::msg("streaming failed"))?;
+                    stream.map_value(v).map_err(|_| Error::msg("streaming failed"))
                 })
                 .map_err(Error::into_sval)?;
 
@@ -282,7 +282,7 @@ mod sval_support {
 
             self.0
                 .by_ref()
-                .try_for_each(|k, v| stream.seq_elem((k, v)))
+                .try_for_each(|k, v| stream.seq_elem((k, v)).map_err(|_| Error::msg("streaming failed")))
                 .map_err(Error::into_sval)?;
 
             stream.seq_end()
