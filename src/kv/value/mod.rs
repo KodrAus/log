@@ -24,7 +24,7 @@ impl<'v> Value<'v> {
     /// Create a value from an anonymous type.
     /// 
     /// The value must be provided with a compatible visit method.
-    pub fn from_any<T>(v: &'v T, visit: fn(&T, Visitor) -> Result<(), Error>) -> Self {
+    pub fn from_any<T>(v: &'v T, visit: VisitFn<T>) -> Self {
         Value(Any::new(v, visit))
     }
 }
@@ -52,24 +52,23 @@ struct Void {
 #[derive(Clone, Copy)]
 struct Any<'a> {
     data: &'a Void,
-    visit: fn(&Void, Visitor) -> Result<(), Error>,
+    visit: VisitFn<Void>,
 }
 
+type VisitFn<T> = fn(Visitor, &T) -> Result<(), Error>;
+
 impl<'a> Any<'a> {
-    fn new<T>(data: &'a T, visit: fn(&T, Visitor) -> Result<(), Error>) -> Self {
+    fn new<T>(data: &'a T, visit: VisitFn<T>) -> Self {
         unsafe {
             Any {
                 data: mem::transmute::<&'a T, &'a Void>(data),
-                visit: mem::transmute::<
-                    fn(&T, Visitor) -> Result<(), Error>,
-                    fn(&Void, Visitor) -> Result<(), Error>>
-                    (visit),
+                visit: mem::transmute::<VisitFn<T>, VisitFn<Void>>(visit),
             }
         }
     }
 
     fn visit(&self, visitor: Visitor) -> Result<(), Error> {
-        (self.visit)(self.data, visitor)
+        (self.visit)(visitor, self.data)
     }
 }
 

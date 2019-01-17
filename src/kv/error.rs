@@ -48,11 +48,21 @@ impl fmt::Display for ErrorInner {
     }
 }
 
+#[cfg(feature = "kv_sval")]
+mod sval_support {
+    use super::*;
+
+    impl Error {
+        /// Convert into `sval`.
+        pub fn into_sval(self) -> sval::Error {
+            sval::Error::msg("streaming failed")
+        }
+    }
+}
+
 #[cfg(feature = "kv_serde")]
 mod serde_support {
     use super::*;
-
-    use serde;
 
     impl Error {
         /// Convert into `serde`.
@@ -64,9 +74,6 @@ mod serde_support {
         }
     }
 }
-
-#[cfg(feature = "kv_serde")]
-pub use self::serde_support::*;
 
 #[cfg(feature = "std")]
 mod std_support {
@@ -127,6 +134,3 @@ mod std_support {
         }
     }
 }
-
-#[cfg(feature = "std")]
-pub use self::std_support::*;

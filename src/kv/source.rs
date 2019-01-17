@@ -96,21 +96,21 @@ pub trait Source {
     }
 
     /// Serialize the key-value pairs as a map.
-    #[cfg(feature = "kv_serde")]
-    fn serialize_as_map(self) -> SerializeAsMap<Self>
+    #[cfg(any(feature = "kv_serde", feature = "kv_sval"))]
+    fn as_map(self) -> AsMap<Self>
     where
         Self: Sized,
     {
-        SerializeAsMap(self)
+        AsMap(self)
     }
 
     /// Serialize the key-value pairs as a sequence.
-    #[cfg(feature = "kv_serde")]
-    fn serialize_as_seq(self) -> SerializeAsSeq<Self>
+    #[cfg(any(feature = "kv_serde", feature = "kv_sval"))]
+    fn as_seq(self) -> AsSeq<Self>
     where
         Self: Sized,
     {
-        SerializeAsSeq(self)
+        AsSeq(self)
     }
 }
 
@@ -166,13 +166,13 @@ where
 
 /// Serialize the key-value pairs as a map.
 #[derive(Debug)]
-#[cfg(feature = "kv_serde")]
-pub struct SerializeAsMap<KVS>(KVS);
+#[cfg(any(feature = "kv_serde", feature = "kv_sval"))]
+pub struct AsMap<KVS>(KVS);
 
 /// Serialize the key-value pairs as a sequence.
 #[derive(Debug)]
-#[cfg(feature = "kv_serde")]
-pub struct SerializeAsSeq<KVS>(KVS);
+#[cfg(any(feature = "kv_serde", feature = "kv_sval"))]
+pub struct AsSeq<KVS>(KVS);
 
 impl<K, V> Source for (K, V)
 where
@@ -248,13 +248,55 @@ where
     }
 }
 
+#[cfg(feature = "kv_sval")]
+mod sval_support {
+    use super::*;
+
+    use sval::value::{self, Value};
+
+    impl<KVS> Value for AsMap<KVS>
+    where
+        KVS: Source,
+    {
+        fn stream(&self, stream: &mut value::Stream) -> Result<(), value::Error> {
+            stream.map_begin(None)?;
+
+            self.0
+                .by_ref()
+                .try_for_each(|k, v| {
+                    stream.map_key(k)?;
+                    stream.map_value(v)
+                })
+                .map_err(Error::into_sval)?;
+
+            stream.map_end()
+        }
+    }
+
+    impl<KVS> Value for AsSeq<KVS>
+    where
+        KVS: Source,
+    {
+        fn stream(&self, stream: &mut value::Stream) -> Result<(), value::Error> {
+            stream.seq_begin(None)?;
+
+            self.0
+                .by_ref()
+                .try_for_each(|k, v| stream.seq_elem((k, v)))
+                .map_err(Error::into_sval)?;
+
+            stream.seq_end()
+        }
+    }
+}
+
 #[cfg(feature = "kv_serde")]
 mod serde_support {
     use super::*;
 
     use serde::ser::{Serialize, Serializer, SerializeMap, SerializeSeq};
 
-    impl<KVS> Serialize for SerializeAsMap<KVS>
+    impl<KVS> Serialize for AsMap<KVS>
     where
         KVS: Source,
     {
@@ -273,7 +315,7 @@ mod serde_support {
         }
     }
 
-    impl<KVS> Serialize for SerializeAsSeq<KVS>
+    impl<KVS> Serialize for AsSeq<KVS>
     where
         KVS: Source,
     {
@@ -292,9 +334,6 @@ mod serde_support {
         }
     }
 }
-
-#[cfg(feature = "kv_serde")]
-pub use self::serde_support::*;
 
 #[cfg(feature = "std")]
 mod std_support {

@@ -1,3 +1,10 @@
+/*
+A `std::fmt` backend for structured values.
+
+This module allows capturing `impl std::fmt::Debug` as a `Value`,
+and formatting any `Value` using `std::fmt`.
+*/
+
 use std::fmt;
 
 use crate::kv::value;
@@ -5,7 +12,7 @@ use crate::kv::value;
 impl<'v> value::Value<'v> {
     /// Create a value.
     pub fn from_debug(v: &'v impl fmt::Debug) -> Self {
-        Self::from_any(v, |v, visit| visit.debug(v))
+        Self::from_any(v, |visit, v| visit.debug(v))
     }
 }
 

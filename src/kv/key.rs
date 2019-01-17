@@ -104,6 +104,19 @@ mod std_support {
     }
 }
 
+#[cfg(feature = "kv_sval")]
+mod sval_support {
+    use super::*;
+
+    use sval::value::{self, Value};
+
+    impl<'k> Value for Key<'k> {
+        fn stream(&self, stream: &mut value::Stream) -> Result<(), value::Error> {
+            self.as_str().stream(stream)
+        }
+    }
+}
+
 #[cfg(feature = "kv_serde")]
 mod serde_support {
     use super::*;

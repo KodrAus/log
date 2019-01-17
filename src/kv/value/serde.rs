@@ -1,3 +1,10 @@
+/*
+A `serde` backend for structured values.
+
+This module allows capturing `impl serde::Serialize` as a `Value`,
+and serializing any `Value` using `serde`.
+*/
+
 #[cfg(feature = "kv_serde")]
 mod imp {
     use std::fmt;
@@ -7,7 +14,7 @@ mod imp {
     impl<'v> value::Value<'v> {
         /// Create a value.
         pub fn from_serde(v: &'v (impl serde::Serialize + fmt::Debug)) -> Self {
-            Self::from_any(v, |v, visit| visit.serde(v))
+            Self::from_any(v, |visit, v| visit.serde(v))
         }
     }
 

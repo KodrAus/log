@@ -1456,6 +1456,7 @@ mod tests {
         assert_eq!(metadata_test.target(), "myApp");
     }
 
+    /*
     #[test]
     fn test_record_builder() {
         use super::{MetadataBuilder, RecordBuilder};
@@ -1478,6 +1479,7 @@ mod tests {
         assert_eq!(record_test.line(), Some(30));
         assert_eq!(record_test.key_values().count(), 2);
     }
+    */
 
     #[test]
     fn test_record_convenience_builder() {

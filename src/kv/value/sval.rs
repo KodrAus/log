@@ -1,3 +1,10 @@
+/*
+An `sval` backend for structured values.
+
+This module allows capturing `impl sval::Value` as a `Value`,
+and streaming any `Value` using `sval`.
+*/
+
 #[cfg(feature = "kv_sval")]
 mod imp {
     use std::fmt;
@@ -7,7 +14,7 @@ mod imp {
     impl<'v> value::Value<'v> {
         /// Create a value.
         pub fn from_sval(v: &'v (impl sval::Value + fmt::Debug)) -> Self {
-            Self::from_any(v, |v, visit| visit.sval(v))
+            Self::from_any(v, |visit, v| visit.sval(v))
         }
     }
 

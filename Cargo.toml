@@ -22,8 +22,6 @@ name = "filters"
 harness = false
 
 [features]
-default = []
-
 max_level_off   = []
 max_level_error = []
 max_level_warn  = []
@@ -38,9 +36,12 @@ release_max_level_info  = []
 release_max_level_debug = []
 release_max_level_trace = []
 
-i128 = []
 std = []
+
+# Support structured values using `sval`
 kv_sval = ["sval"]
+
+# Support structured values using `serde`
 kv_serde = ["std","serde","erased-serde","sval/serde"]
 
 [badges]
@@ -49,7 +50,8 @@ appveyor = { repository = "alexcrichton/log" }
 
 [dependencies]
 cfg-if = "0.1.2"
-sval = { version = "0.1", optional = true }
+
+sval = { version = "0.1", default-features = false, optional = true }
 serde = { version = "1.0", default-features = false, optional = true }
 erased-serde = { version = "0.3.6", default-features = false, optional = true }
 
