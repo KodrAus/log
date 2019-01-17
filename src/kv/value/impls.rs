@@ -11,6 +11,6 @@ where
 
 impl ToValue for u8 {
     fn to_value(&self) -> Value {
-        Value::any(self, |v, visit| visit.u64(*v as u64))
+        Value::from_any(self, |v, visit| visit.u64(*v as u64))
     }
 }

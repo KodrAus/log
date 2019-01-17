@@ -5,7 +5,7 @@ use crate::kv::value;
 impl<'v> value::Value<'v> {
     /// Create a value.
     pub fn from_debug(v: &'v impl fmt::Debug) -> Self {
-        Self::any(v, |v, visit| visit.debug(v))
+        Self::from_any(v, |v, visit| visit.debug(v))
     }
 }
 
@@ -39,6 +39,14 @@ impl<'a, 'b> value::Backend for FmtBackend<'a, 'b> {
     fn u64(&mut self, v: u64) -> Result<(), value::Error> {
         self.debug(&v)
     }
+
+    fn i64(&mut self, v: i64) -> Result<(), value::Error> {
+        self.debug(&v)
+    }
+
+    fn str(&mut self, v: &str) -> Result<(), value::Error> {
+        self.debug(&v)
+    }
 }
 
 impl<'a, 'b> Backend for FmtBackend<'a, 'b> {
@@ -46,5 +54,19 @@ impl<'a, 'b> Backend for FmtBackend<'a, 'b> {
         write!(self.0, "{:?}", v).map_err(|_| value::Error::msg("formatting failed"))?;
 
         Ok(())
+    }
+}
+
+#[cfg(feature = "kv_sval")]
+impl<'a, 'b> value::sval::Backend for FmtBackend<'a, 'b> {
+    fn sval(&mut self, v: &dyn value::sval::Value) -> Result<(), value::Error> {
+        self.debug(&v)
+    }
+}
+
+#[cfg(feature = "kv_serde")]
+impl<'a, 'b> value::serde::Backend for FmtBackend<'a, 'b> {
+    fn serde(&mut self, v: &dyn value::serde::Value) -> Result<(), value::Error> {
+        self.debug(&v)
     }
 }

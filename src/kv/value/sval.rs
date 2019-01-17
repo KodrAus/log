@@ -7,7 +7,7 @@ mod imp {
     impl<'v> value::Value<'v> {
         /// Create a value.
         pub fn from_sval(v: &'v (impl sval::Value + fmt::Debug)) -> Self {
-            Self::any(v, |v, visit| visit.sval(v))
+            Self::from_any(v, |v, visit| visit.sval(v))
         }
     }
 
@@ -37,33 +37,44 @@ mod imp {
     // A visitor with an `sval` backend.
     pub(in crate::kv::value) struct SvalBackend<'a, 'b>(&'a mut sval::value::Stream<'b>);
 
-    impl<'a, 'b> value::Backend for SvalBackend<'a, 'b> {
-        fn u64(&mut self, v: u64) -> Result<(), value::Error> {
-            self.sval(&v)
-        }
-    }
-
-    impl<'a, 'b> Backend for SvalBackend<'a, 'b> {
-        fn sval(&mut self, v: &dyn Value) -> Result<(), value::Error> {
+    impl<'a, 'b> SvalBackend<'a, 'b> {
+        fn any(&mut self, v: impl sval::Value) -> Result<(), value::Error> {
             self.0.any(v).map_err(|_| value::Error::msg("serialization failed"))?;
 
             Ok(())
         }
     }
 
-    impl<'a, 'b> value::fmt::Backend for SvalBackend<'a, 'b> {
-        fn debug(&mut self, v: &dyn fmt::Debug) -> Result<(), value::Error> {
-            self.0.fmt(format_args!("{:?}", v)).map_err(|_| value::Error::msg("formatting failed"))?;
+    impl<'a, 'b> value::Backend for SvalBackend<'a, 'b> {
+        fn u64(&mut self, v: u64) -> Result<(), value::Error> {
+            self.sval(&v)
+        }
 
-            Ok(())
+        fn i64(&mut self, v: i64) -> Result<(), value::Error> {
+            self.sval(&v)
+        }
+
+        fn str(&mut self, v: &str) -> Result<(), value::Error> {
+            self.sval(&v)
         }
     }
 
-    // `sval` support for other backends
-
-    impl<'a, 'b> Backend for value::fmt::FmtBackend<'a, 'b> {
+    impl<'a, 'b> Backend for SvalBackend<'a, 'b> {
         fn sval(&mut self, v: &dyn Value) -> Result<(), value::Error> {
-            value::Backend::debug(self, &v)
+            self.any(v)
+        }
+    }
+
+    impl<'a, 'b> value::fmt::Backend for SvalBackend<'a, 'b> {
+        fn debug(&mut self, v: &dyn fmt::Debug) -> Result<(), value::Error> {
+            self.any(format_args!("{:?}", v))
+        }
+    }
+
+    #[cfg(feature = "kv_serde")]
+    impl<'a, 'b> value::serde::Backend for SvalBackend<'a, 'b> {
+        fn serde(&mut self, v: &dyn value::serde::Value) -> Result<(), value::Error> {
+            self.any(sval::serde::to_value(v))
         }
     }
 }

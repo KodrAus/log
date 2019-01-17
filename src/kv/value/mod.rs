@@ -6,6 +6,7 @@ use std::marker::PhantomData;
 mod impls;
 mod fmt;
 mod sval;
+mod serde;
 
 #[doc(inline)]
 pub use super::Error;
@@ -23,7 +24,7 @@ impl<'v> Value<'v> {
     /// Create a value from an anonymous type.
     /// 
     /// The value must be provided with a compatible visit method.
-    pub fn any<T>(v: &'v T, visit: fn(&T, Visitor) -> Result<(), Error>) -> Self {
+    pub fn from_any<T>(v: &'v T, visit: fn(&T, Visitor) -> Result<(), Error>) -> Self {
         Value(Any::new(v, visit))
     }
 }
@@ -79,8 +80,20 @@ impl<'a> Visitor<'a> {
     fn u64(self, v: u64) -> Result<(), Error> {
         self.0.u64(v)
     }
+
+    fn i64(self, v: i64) -> Result<(), Error> {
+        self.0.i64(v)
+    }
+
+    fn str(self, v: &str) -> Result<(), Error> {
+        self.0.str(v)
+    }
 }
 
-trait Backend: self::fmt::Backend + self::sval::Backend {
+trait Backend: self::fmt::Backend + self::sval::Backend + self::serde::Backend {
     fn u64(&mut self, v: u64) -> Result<(), Error>;
+
+    fn i64(&mut self, v: i64) -> Result<(), Error>;
+
+    fn str(&mut self, v: &str) -> Result<(), Error>;
 }
