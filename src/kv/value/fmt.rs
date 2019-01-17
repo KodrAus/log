@@ -33,7 +33,7 @@ pub(in crate::kv::value) trait Backend {
     fn debug(&mut self, v: &dyn fmt::Debug) -> Result<(), value::Error>;
 }
 
-pub(in crate::kv::value) struct FmtBackend<'a, 'b>(&'a mut fmt::Formatter<'b>);
+struct FmtBackend<'a, 'b>(&'a mut fmt::Formatter<'b>);
 
 impl<'a, 'b> value::Backend for FmtBackend<'a, 'b> {
     fn u64(&mut self, v: u64) -> Result<(), value::Error> {

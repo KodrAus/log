@@ -35,7 +35,7 @@ mod imp {
     impl<T: ?Sized> Value for T where T: sval::Value + fmt::Debug {}
 
     // A visitor with an `sval` backend.
-    pub(in crate::kv::value) struct SvalBackend<'a, 'b>(&'a mut sval::value::Stream<'b>);
+    struct SvalBackend<'a, 'b>(&'a mut sval::value::Stream<'b>);
 
     impl<'a, 'b> SvalBackend<'a, 'b> {
         fn any(&mut self, v: impl sval::Value) -> Result<(), value::Error> {

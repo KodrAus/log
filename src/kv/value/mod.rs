@@ -90,6 +90,10 @@ impl<'a> Visitor<'a> {
     }
 }
 
+/// A backend that can receive the structure of a `Value`.
+/// 
+/// In addition to the primitives defined here each backend must also support
+/// values from any other backend.
 trait Backend: self::fmt::Backend + self::sval::Backend + self::serde::Backend {
     fn u64(&mut self, v: u64) -> Result<(), Error>;
 

@@ -53,7 +53,7 @@ mod imp {
     }
 
     // A visitor with a `serde` backend.
-    pub(in crate::kv::value) struct SerdeBackend<S>
+    struct SerdeBackend<S>
     where
         S: serde::Serializer,
     {

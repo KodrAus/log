@@ -22,7 +22,7 @@ name = "filters"
 harness = false
 
 [features]
-default = ["kv_sval"]
+default = []
 
 max_level_off   = []
 max_level_error = []
