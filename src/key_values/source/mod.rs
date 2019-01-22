@@ -48,8 +48,9 @@ pub trait Source {
 
     /// Find the value for a given key.
     /// 
-    /// If the key is present multiple times, this method will
-    /// return the *last* value for the given key.
+    /// If the key is present multiple times, whether or not this
+    /// method will return the first or last value for a given key
+    /// is not defined.
     /// 
     /// The default implementation will scan all key-value pairs.
     /// Implementors are encouraged provide a more efficient version

@@ -15,7 +15,7 @@ macro_rules! properties(
         tokens: [$($tokens:tt)*],
         kvs_ident: $kvs_ident:ident
     }) => {
-        let $kvs_ident: &[(&str, $crate::kv::value::Value)] = &[$($tokens)*];
+        let $kvs_ident: &[(&str, $crate::key_values::value::Value)] = &[$($tokens)*];
     };
 
     // Munch a key as an identifier from the token stream
@@ -140,7 +140,7 @@ macro_rules! properties(
             stream: [$($stream)*],
             tokens: [
                 $($tokens)*
-                (stringify!($key), $crate::kv::value::Visit::to_value(&$key)),
+                (stringify!($key), $crate::key_values::value::Visit::to_value(&$key)),
             ],
             kvs_ident: $kvs_ident
         });
