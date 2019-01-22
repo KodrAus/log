@@ -9,23 +9,22 @@ and streaming any `Value` using `sval`.
 mod imp {
     use std::fmt;
 
-    use crate::kv::value;
+    use crate::key_values::value;
 
     impl<'v> value::Value<'v> {
-        /// Create a value.
+        /// Create a value from a `sval::Value`.
         pub fn from_sval(v: &'v (impl sval::Value + fmt::Debug)) -> Self {
-            Self::from_any(v, |visit, v| visit.sval(v))
+            Self::from_any(v, |from, v| from.sval(v))
         }
     }
 
     impl<'v> sval::Value for value::Value<'v> {
         fn stream(&self, stream: &mut sval::value::Stream) -> Result<(), sval::value::Error> {
-            let mut visitor = SvalBackend(stream);
-            self.0.visit(value::Visitor(&mut visitor)).map_err(|_| sval::value::Error::msg("serialization failed"))
+            self.0.visit(&mut SvalBackend(stream)).map_err(|_| sval::value::Error::msg("serialization failed"))
         }
     }
 
-    impl<'a> value::Visitor<'a> {
+    impl<'a> value::FromAny<'a> {
         /// Visit a value that can be streamed with `sval`.
         pub fn sval(self, v: (impl sval::Value + fmt::Debug)) -> Result<(), value::Error> {
             self.0.sval(&v)
@@ -33,12 +32,12 @@ mod imp {
     }
 
     /// The `sval` requirements for a backend.
-    pub(in crate::kv::value) trait Backend {
+    pub(in crate::key_values::value) trait Backend {
         fn sval(&mut self, v: &dyn Value) -> Result<(), value::Error>;
     }
 
     /// An internal wrapper trait for `dyn sval::Value + fmt::Debug`.
-    pub(in crate::kv::value) trait Value: sval::Value + fmt::Debug {}
+    pub(in crate::key_values::value) trait Value: sval::Value + fmt::Debug {}
     impl<T: ?Sized> Value for T where T: sval::Value + fmt::Debug {}
 
     // A visitor with an `sval` backend.
@@ -61,6 +60,22 @@ mod imp {
             self.sval(&v)
         }
 
+        fn f64(&mut self, v: f64) -> Result<(), value::Error> {
+            self.sval(&v)
+        }
+
+        fn bool(&mut self, v: bool) -> Result<(), value::Error> {
+            self.sval(&v)
+        }
+
+        fn char(&mut self, v: char) -> Result<(), value::Error> {
+            self.sval(&v)
+        }
+
+        fn none(&mut self) -> Result<(), value::Error> {
+            self.sval(&Option::None::<()>)
+        }
+
         fn str(&mut self, v: &str) -> Result<(), value::Error> {
             self.sval(&v)
         }
@@ -73,7 +88,7 @@ mod imp {
     }
 
     impl<'a, 'b> value::fmt::Backend for SvalBackend<'a, 'b> {
-        fn debug(&mut self, v: &dyn fmt::Debug) -> Result<(), value::Error> {
+        fn debug(&mut self, v: &dyn value::fmt::Value) -> Result<(), value::Error> {
             self.any(format_args!("{:?}", v))
         }
     }
@@ -88,9 +103,9 @@ mod imp {
 
 #[cfg(not(feature = "kv_sval"))]
 mod imp {
-    use crate::kv::value;
+    use crate::key_values::value;
     
-    pub(in crate::kv::value) trait Backend {}
+    pub(in crate::key_values::value) trait Backend {}
 
     impl<V: ?Sized> Backend for V where V: value::Backend {}
 }

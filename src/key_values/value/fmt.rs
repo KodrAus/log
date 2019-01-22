@@ -7,19 +7,18 @@ and formatting any `Value` using `std::fmt`.
 
 use std::fmt;
 
-use crate::kv::value;
+use crate::key_values::value;
 
 impl<'v> value::Value<'v> {
-    /// Create a value.
+    /// Create a value from a `fmt::Debug`.
     pub fn from_debug(v: &'v impl fmt::Debug) -> Self {
-        Self::from_any(v, |visit, v| visit.debug(v))
+        Self::from_any(v, |from, v| from.debug(v))
     }
 }
 
 impl<'v> fmt::Debug for value::Value<'v> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut visitor = FmtBackend(f);
-        self.0.visit(value::Visitor(&mut visitor)).map_err(|_| fmt::Error)
+        self.0.visit(&mut FmtBackend(f)).map_err(|_| fmt::Error)
     }
 }
 
@@ -29,16 +28,18 @@ impl<'v> fmt::Display for value::Value<'v> {
     }
 }
 
-impl<'a> value::Visitor<'a> {
+impl<'a> value::FromAny<'a> {
     /// Visit a value that can be formatted.
     pub fn debug(self, v: impl fmt::Debug) -> Result<(), value::Error> {
         self.0.debug(&v)
     }
 }
 
-pub(in crate::kv::value) trait Backend {
-    fn debug(&mut self, v: &dyn fmt::Debug) -> Result<(), value::Error>;
+pub(in crate::key_values::value) trait Backend {
+    fn debug(&mut self, v: &dyn Value) -> Result<(), value::Error>;
 }
+
+pub(in crate::key_values::value) use fmt::Debug as Value;
 
 struct FmtBackend<'a, 'b>(&'a mut fmt::Formatter<'b>);
 
@@ -49,6 +50,22 @@ impl<'a, 'b> value::Backend for FmtBackend<'a, 'b> {
 
     fn i64(&mut self, v: i64) -> Result<(), value::Error> {
         self.debug(&v)
+    }
+
+    fn f64(&mut self, v: f64) -> Result<(), value::Error> {
+        self.debug(&v)
+    }
+
+    fn bool(&mut self, v: bool) -> Result<(), value::Error> {
+        self.debug(&v)
+    }
+
+    fn char(&mut self, v: char) -> Result<(), value::Error> {
+        self.debug(&v)
+    }
+
+    fn none(&mut self) -> Result<(), value::Error> {
+        self.debug(&Option::None::<()>)
     }
 
     fn str(&mut self, v: &str) -> Result<(), value::Error> {

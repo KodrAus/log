@@ -4,8 +4,8 @@
 mod macros;
 
 mod error;
-mod key;
 
+pub mod key;
 pub mod value;
 pub mod source;
 

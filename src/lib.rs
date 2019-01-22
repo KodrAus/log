@@ -307,10 +307,10 @@ mod macros;
 #[cfg(feature = "serde")]
 mod serde_support;
 #[macro_use]
-pub mod kv;
+pub mod key_values;
 
-use self::kv::source::{Source, ErasedSource};
-use self::kv::value::Value;
+use self::key_values::source::{Source, ErasedSource};
+use self::key_values::value::Value;
 
 // The LOGGER static holds a pointer to the global logger. It is protected by
 // the STATE static which determines whether LOGGER has been initialized yet.
@@ -1460,7 +1460,7 @@ mod tests {
     #[test]
     fn test_record_builder() {
         use super::{MetadataBuilder, RecordBuilder};
-        use kv::RawSource;
+        use key_values::RawSource;
         
         let target = "myApp";
         let metadata = MetadataBuilder::new().target(target).build();

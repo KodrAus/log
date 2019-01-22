@@ -9,12 +9,12 @@ and serializing any `Value` using `serde`.
 mod imp {
     use std::fmt;
 
-    use crate::kv::value;
+    use crate::key_values::value;
 
     impl<'v> value::Value<'v> {
-        /// Create a value.
+        /// Create a value from a `serde::Serialize`.
         pub fn from_serde(v: &'v (impl serde::Serialize + fmt::Debug)) -> Self {
-            Self::from_any(v, |visit, v| visit.serde(v))
+            Self::from_any(v, |from, v| from.serde(v))
         }
     }
 
@@ -28,13 +28,13 @@ mod imp {
                 ok: None,
             };
 
-            self.0.visit(value::Visitor(&mut visitor)).map_err(|_| <S::Error as serde::ser::Error>::custom("serialization failed"))?;
+            self.0.visit(&mut visitor).map_err(|_| <S::Error as serde::ser::Error>::custom("serialization failed"))?;
 
             Ok(visitor.ok.expect("missing return value"))
         }
     }
 
-    impl<'a> value::Visitor<'a> {
+    impl<'a> value::FromAny<'a> {
         /// Visit a value that can be streamed with `serde`.
         pub fn serde(self, v: (impl serde::Serialize + fmt::Debug)) -> Result<(), value::Error> {
             self.0.serde(&v)
@@ -42,12 +42,12 @@ mod imp {
     }
 
     /// The `serde` requirements for a backend.
-    pub(in crate::kv::value) trait Backend {
+    pub(in crate::key_values::value) trait Backend {
         fn serde(&mut self, v: &dyn Value) -> Result<(), value::Error>;
     }
 
     /// An internal wrapper trait for `dyn erased_serde::Serialize + fmt::Debug`.
-    pub(in crate::kv::value) trait Value: erased_serde::Serialize + fmt::Debug {}
+    pub(in crate::key_values::value) trait Value: erased_serde::Serialize + fmt::Debug {}
     impl<T: ?Sized> Value for T where T: serde::Serialize + fmt::Debug {}
 
     impl<'a> serde::Serialize for &'a dyn Value {
@@ -91,6 +91,22 @@ mod imp {
             self.serde(&v)
         }
 
+        fn f64(&mut self, v: f64) -> Result<(), value::Error> {
+            self.serde(&v)
+        }
+
+        fn bool(&mut self, v: bool) -> Result<(), value::Error> {
+            self.serde(&v)
+        }
+
+        fn char(&mut self, v: char) -> Result<(), value::Error> {
+            self.serde(&v)
+        }
+
+        fn none(&mut self) -> Result<(), value::Error> {
+            self.serde(&Option::None::<()>)
+        }
+
         fn str(&mut self, v: &str) -> Result<(), value::Error> {
             self.serde(&v)
         }
@@ -109,7 +125,7 @@ mod imp {
     where
         S: serde::Serializer,
     {
-        fn debug(&mut self, v: &dyn fmt::Debug) -> Result<(), value::Error> {
+        fn debug(&mut self, v: &dyn value::fmt::Value) -> Result<(), value::Error> {
             self.serialize(format_args!("{:?}", v))
         }
     }
@@ -127,9 +143,9 @@ mod imp {
 
 #[cfg(not(feature = "kv_serde"))]
 mod imp {
-    use crate::kv::value;
+    use crate::key_values::value;
     
-    pub(in crate::kv::value) trait Backend {}
+    pub(in crate::key_values::value) trait Backend {}
 
     impl<V: ?Sized> Backend for V where V: value::Backend {}
 }

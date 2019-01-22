@@ -1,23 +1,63 @@
+//! Structured keys.
+
 use std::fmt;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 use std::borrow::Borrow;
 
+/// A type that can be converted into a key.
+pub trait ToKey {
+    /// Perform the conversion.
+    fn to_key(&self) -> Key;
+}
+
+impl<'a, T: ?Sized> ToKey for &'a T
+where
+    T: ToKey,
+{
+    fn to_key(&self) -> Key {
+        (**self).to_key()
+    }
+}
+
+impl ToKey for str {
+    fn to_key(&self) -> Key {
+        Key::from_str(self, None)
+    }
+}
+
+impl<'k> ToKey for Key<'k> {
+    fn to_key(&self) -> Key {
+        Key::from_str(self, self.index)
+    }
+}
+
 /// The key in a key-value pair.
 /// 
 /// The `Key` type abstracts over owned or borrowed keys.
-pub struct Key<'k>(KeyInner<'k>);
+pub struct Key<'k> {
+    inner: Str<'k>,
+    index: Option<usize>,
+}
 
 impl<'k> Key<'k> {
-    pub fn new(k: &'k (impl Borrow<str> + ?Sized)) -> Self {
-        Key(KeyInner::Borrowed(k.borrow()))
+    /// Create a key from a borrowed string and optional index.
+    pub fn from_str(key: &'k (impl Borrow<str> + ?Sized), index: Option<usize>) -> Self {
+        Key {
+            inner: Str::Borrowed(key.borrow()),
+            index,
+        }
+    }
+
+    pub fn index(&self) -> Option<usize> {
+        self.index
     }
 
     pub fn as_str(&self) -> &str {
-        match self.0 {
-            KeyInner::Borrowed(k) => k,
+        match self.inner {
+            Str::Borrowed(k) => k,
             #[cfg(feature = "std")]
-            KeyInner::Owned(ref k) => &*k,
+            Str::Owned(ref k) => &*k,
         }
     }
 }
@@ -36,7 +76,7 @@ impl<'k> Borrow<str> for Key<'k> {
 
 impl<'k> From<&'k str> for Key<'k> {
     fn from(k: &'k str) -> Self {
-        Key(KeyInner::Borrowed(k))
+        Key::from_str(k, None)
     }
 }
 
@@ -81,7 +121,7 @@ impl<'k> fmt::Display for Key<'k> {
     }
 }
 
-enum KeyInner<'k> {
+enum Str<'k> {
     Borrowed(&'k str),
     #[cfg(feature = "std")]
     Owned(String),
@@ -92,14 +132,24 @@ mod std_support {
     use super::*;
 
     impl<'k> Key<'k> {
-        pub fn owned(k: impl Into<String>) -> Self {
-            Key(KeyInner::Owned(k.into()))
+        /// Create a key from an owned string and optional index.
+        pub fn from_owned(key: impl Into<String>, index: Option<usize>) -> Self {
+            Key {
+                inner: Str::Owned(key.into()),
+                index,
+            }
+        }
+    }
+
+    impl ToKey for String {
+        fn to_key(&self) -> Key {
+            Key::from_str(self, None)
         }
     }
 
     impl<'k> From<String> for Key<'k> {
         fn from(k: String) -> Self {
-            Key::owned(k)
+            Key::from_owned(k, None)
         }
     }
 }
