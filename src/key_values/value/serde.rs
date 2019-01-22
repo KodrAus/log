@@ -28,7 +28,7 @@ mod imp {
                 ok: None,
             };
 
-            self.0.visit(&mut visitor).map_err(|_| <S::Error as serde::ser::Error>::custom("serialization failed"))?;
+            self.0.visit(&mut visitor).map_err(value::Error::into_serde)?;
 
             Ok(visitor.ok.expect("missing return value"))
         }
@@ -73,7 +73,7 @@ mod imp {
         S: serde::Serializer,
     {
         fn serialize(&mut self, v: impl erased_serde::Serialize) -> Result<(), value::Error> {
-            self.ok = Some(erased_serde::serialize(&v, self.serializer.take().expect("missing serializer")).map_err(|_| value::Error::msg("serialization failed"))?);
+            self.ok = Some(erased_serde::serialize(&v, self.serializer.take().expect("missing serializer")).map_err(value::Error::from_serde)?);
 
             Ok(())
         }

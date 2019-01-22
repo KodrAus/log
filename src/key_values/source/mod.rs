@@ -109,7 +109,8 @@ pub trait Source {
             }
         }
 
-        self.visit(&mut ForEach(f, Default::default()))
+        let mut for_each = ForEach(f, Default::default());
+        self.visit(&mut for_each)
     }
 
     /// Serialize the key-value pairs as a map.
@@ -174,10 +175,9 @@ mod sval_support {
             self.0
                 .by_ref()
                 .try_for_each(|k, v| {
-                    stream.map_key(k).map_err(|_| Error::msg("streaming failed"))?;
-                    stream.map_value(v).map_err(|_| Error::msg("streaming failed"))
-                })
-                .map_err(Error::into_sval)?;
+                    stream.map_key(k)?;
+                    stream.map_value(v)
+                })?;
 
             stream.map_end()
         }
@@ -192,8 +192,7 @@ mod sval_support {
 
             self.0
                 .by_ref()
-                .try_for_each(|k, v| stream.seq_elem((k, v)).map_err(|_| Error::msg("streaming failed")))
-                .map_err(Error::into_sval)?;
+                .try_for_each(|k, v| stream.seq_elem((k, v)))?;
 
             stream.seq_end()
         }
@@ -218,7 +217,7 @@ mod serde_support {
 
             self.0
                 .by_ref()
-                .try_for_each(|k, v| map.serialize_entry(&k, &v))
+                .try_for_each(|k, v| map.serialize_entry(&k, &v).map_err(Error::from_serde))
                 .map_err(Error::into_serde)?;
 
             map.end()
@@ -237,7 +236,7 @@ mod serde_support {
 
             self.0
                 .by_ref()
-                .try_for_each(|k, v| seq.serialize_element(&(&k, &v)))
+                .try_for_each(|k, v| seq.serialize_element(&(&k, &v)).map_err(Error::from_serde))
                 .map_err(Error::into_serde)?;
 
             seq.end()

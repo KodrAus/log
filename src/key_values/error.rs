@@ -48,14 +48,55 @@ impl fmt::Display for ErrorInner {
     }
 }
 
+impl From<fmt::Error> for Error {
+    #[cfg(feature = "std")]
+    fn from(err: fmt::Error) -> Self {
+        Self::custom(err)
+    }
+
+    #[cfg(not(feature = "std"))]
+    fn from(_: fmt::Error) -> Self {
+        Self::msg("formatting failed")
+    }
+}
+
+impl From<Error> for fmt::Error {
+    fn from(_: Error) -> Self {
+        Self
+    }
+}
+
 #[cfg(feature = "kv_sval")]
 mod sval_support {
     use super::*;
 
+    impl From<sval::Error> for Error {
+        fn from(err: sval::Error) -> Self {
+            Self::from_sval(err)
+        }
+    }
+
+    #[cfg(not(feature = "std"))]
     impl Error {
+        pub(crate) fn from_sval(err: sval::Error) -> Self {
+            Error::msg("sval streaming failed")
+        }
+
         /// Convert into `sval`.
         pub fn into_sval(self) -> sval::Error {
             sval::Error::msg("streaming failed")
+        }
+    }
+
+    #[cfg(feature = "std")]
+    impl Error {
+        pub(crate) fn from_sval(err: sval::Error) -> Self {
+            Error::custom(err)
+        }
+
+        /// Convert into `sval`.
+        pub fn into_sval(self) -> sval::Error {
+            self.into()
         }
     }
 }
@@ -73,6 +114,19 @@ mod serde_support {
             E::custom(self)
         }
     }
+
+    
+    impl Error {
+        #[cfg(not(feature = "std"))]
+        pub(crate) fn from_serde(err: impl serde::ser::Error) -> Self {
+            Self::msg("serde serialization failed")
+        }
+
+        #[cfg(feature = "std")]
+        pub(crate) fn from_serde(err: impl serde::ser::Error) -> Self {
+            Self::custom(err)
+        }
+    }
 }
 
 #[cfg(feature = "std")]
@@ -82,46 +136,31 @@ mod std_support {
     use std::{io, error};
 
     impl Error {
-        /// Get a reference to a standard error.
-        pub fn as_error(&self) -> &(dyn error::Error + Send + Sync + 'static) {
-            &self.0
-        }
-
-        /// Convert into a standard error.
-        pub fn into_error(self) -> Box<dyn error::Error + Send + Sync> {
-            Box::new(self.0)
-        }
-
-        /// Convert into an io error.
-        pub fn into_io_error(self) -> io::Error {
-            io::Error::new(io::ErrorKind::Other, self.into_error())
-        }
-    }
-
-    impl<E> From<E> for Error
-    where
-        E: error::Error,
-    {
-        fn from(err: E) -> Self {
+        /// Create an error for a formattable value.
+        pub fn custom(err: impl fmt::Display) -> Self {
             Error(ErrorInner::Owned(err.to_string()))
         }
     }
 
-    impl AsRef<dyn error::Error + Send + Sync + 'static> for Error {
-        fn as_ref(&self) -> &(dyn error::Error + Send + Sync + 'static) {
-            self.as_error()
-        }
-    }
-
-    impl From<Error> for Box<dyn error::Error + Send + Sync> {
-        fn from(err: Error) -> Self {
-            err.into_error()
+    impl From<io::Error> for Error {
+        fn from(err: io::Error) -> Self {
+            Error::custom(err)
         }
     }
 
     impl From<Error> for io::Error {
         fn from(err: Error) -> Self {
-            err.into_io_error()
+            io::Error::new(io::ErrorKind::Other, err)
+        }
+    }
+
+    impl error::Error for Error {
+        fn description(&self) -> &str {
+            self.0.description()
+        }
+
+        fn cause(&self) -> Option<&dyn error::Error> {
+            self.0.cause()
         }
     }
 

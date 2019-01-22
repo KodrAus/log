@@ -75,7 +75,7 @@ impl<'a, 'b> value::Backend for FmtBackend<'a, 'b> {
 
 impl<'a, 'b> Backend for FmtBackend<'a, 'b> {
     fn debug(&mut self, v: &dyn fmt::Debug) -> Result<(), value::Error> {
-        write!(self.0, "{:?}", v).map_err(|_| value::Error::msg("formatting failed"))?;
+        write!(self.0, "{:?}", v)?;
 
         Ok(())
     }

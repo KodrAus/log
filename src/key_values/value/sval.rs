@@ -20,7 +20,9 @@ mod imp {
 
     impl<'v> sval::Value for value::Value<'v> {
         fn stream(&self, stream: &mut sval::value::Stream) -> Result<(), sval::value::Error> {
-            self.0.visit(&mut SvalBackend(stream)).map_err(|_| sval::value::Error::msg("serialization failed"))
+            self.0.visit(&mut SvalBackend(stream))?;
+
+            Ok(())
         }
     }
 
@@ -45,7 +47,7 @@ mod imp {
 
     impl<'a, 'b> SvalBackend<'a, 'b> {
         fn any(&mut self, v: impl sval::Value) -> Result<(), value::Error> {
-            self.0.any(v).map_err(|_| value::Error::msg("serialization failed"))?;
+            self.0.any(v)?;
 
             Ok(())
         }
