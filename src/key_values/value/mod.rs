@@ -1,9 +1,9 @@
 //! Structured values.
 
 use std::mem;
-use std::fmt::Arguments;
 use std::marker::PhantomData;
 
+mod visitor;
 mod impls;
 mod fmt;
 mod sval;
@@ -11,6 +11,8 @@ mod serde;
 
 #[doc(inline)]
 pub use super::Error;
+
+pub use self::visitor::Visitor;
 
 /// A type that can be converted into a value.
 pub trait ToValue {
@@ -31,13 +33,6 @@ impl<'v> Value<'v> {
     /// prevents local new-types from being used.
     pub fn from_any<T>(v: &'v T, from: FromAnyFn<T>) -> Self {
         Value(Inner::new(v, from))
-    }
-
-    /// Visit a value using a `Visitor`.
-    pub fn visit(&self, visitor: &mut dyn Visitor) -> Result<(), Error> {
-        let mut backend = VisitorBackend(visitor);
-
-        self.0.visit(&mut backend)
     }
 }
 
@@ -81,136 +76,6 @@ impl<'a> Inner<'a> {
 
     fn visit(&self, backend: &mut dyn Backend) -> Result<(), Error> {
         (self.from)(FromAny(backend), self.data)
-    }
-}
-
-/// A visitor for a value.
-pub trait Visitor {
-    /// Visit a format.
-    fn fmt(&mut self, v: Arguments) -> Result<(), Error>;
-
-    /// Visit an unsigned integer.
-    fn u64(&mut self, v: u64) -> Result<(), Error> {
-        self.fmt(format_args!("{:?}", v))
-    }
-
-    /// Visit a signed integer.
-    fn i64(&mut self, v: i64) -> Result<(), Error> {
-        self.fmt(format_args!("{:?}", v))
-    }
-
-    /// Visit a floating point number.
-    fn f64(&mut self, v: f64) -> Result<(), Error> {
-        self.fmt(format_args!("{:?}", v))
-    }
-
-    /// Visit a boolean.
-    fn bool(&mut self, v: bool) -> Result<(), Error> {
-        self.fmt(format_args!("{:?}", v))
-    }
-
-    /// Visit a Unicode character.
-    fn char(&mut self, v: char) -> Result<(), Error> {
-        self.fmt(format_args!("{:?}", v))
-    }
-
-    /// Visit a UTF-8 string.
-    fn str(&mut self, v: &str) -> Result<(), Error> {
-        self.fmt(format_args!("{:?}", v))
-    }
-
-    /// Visit an empty value.
-    fn none(&mut self) -> Result<(), Error> {
-        self.fmt(format_args!("{:?}", Option::None::<()>))
-    }
-}
-
-impl<'a, T: ?Sized> Visitor for &'a mut T
-where
-    T: Visitor,
-{
-    fn fmt(&mut self, v: Arguments) -> Result<(), Error> {
-        (**self).fmt(v)
-    }
-
-    fn u64(&mut self, v: u64) -> Result<(), Error> {
-        (**self).u64(v)
-    }
-
-    fn i64(&mut self, v: i64) -> Result<(), Error> {
-        (**self).i64(v)
-    }
-
-    fn f64(&mut self, v: f64) -> Result<(), Error> {
-        (**self).f64(v)
-    }
-
-    fn bool(&mut self, v: bool) -> Result<(), Error> {
-        (**self).bool(v)
-    }
-
-    fn char(&mut self, v: char) -> Result<(), Error> {
-        (**self).char(v)
-    }
-
-    fn str(&mut self, v: &str) -> Result<(), Error> {
-        (**self).str(v)
-    }
-
-    fn none(&mut self) -> Result<(), Error> {
-        (**self).none()
-    }
-}
-
-struct VisitorBackend<'a>(&'a mut dyn Visitor);
-
-impl<'a> Backend for VisitorBackend<'a> {
-    fn u64(&mut self, v: u64) -> Result<(), Error> {
-        self.0.u64(v)
-    }
-
-    fn i64(&mut self, v: i64) -> Result<(), Error> {
-        self.0.i64(v)
-    }
-
-    fn f64(&mut self, v: f64) -> Result<(), Error> {
-        self.0.f64(v)
-    }
-
-    fn bool(&mut self, v: bool) -> Result<(), Error> {
-        self.0.bool(v)
-    }
-
-    fn char(&mut self, v: char) -> Result<(), Error> {
-        self.0.char(v)
-    }
-
-    fn str(&mut self, v: &str) -> Result<(), Error> {
-        self.0.str(v)
-    }
-
-    fn none(&mut self) -> Result<(), Error> {
-        self.0.none()
-    }
-}
-
-impl<'a> fmt::Backend for VisitorBackend<'a> {
-    fn debug(&mut self, v: &dyn fmt::Value) -> Result<(), Error> {
-        self.0.fmt(format_args!("{:?}", v))
-    }
-}
-
-#[cfg(feature = "kv_sval")]
-impl<'a> sval::Backend for VisitorBackend<'a> {
-    fn sval(&mut self, v: &dyn sval::Value) -> Result<(), Error> {
-        self.0.fmt(format_args!("{:?}", v))
-    }
-}
-
-#[cfg(feature = "kv_serde")]
-impl<'a> serde::Backend for VisitorBackend<'a> {
-    fn serde(&mut self, v: &dyn serde::Value) -> Result<(), Error> {
-        self.0.fmt(format_args!("{:?}", v))
     }
 }
 
