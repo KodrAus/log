@@ -135,7 +135,7 @@ impl<'a> value::sval::Backend for VisitorBackend<'a> {
 }
 
 #[cfg(feature = "kv_serde")]
-impl<'a> serde::Backend for VisitorBackend<'a> {
+impl<'a> value::serde::Backend for VisitorBackend<'a> {
     fn serde(&mut self, v: &dyn value::serde::Value) -> Result<(), value::Error> {
         self.0.fmt(format_args!("{:?}", v))
     }
