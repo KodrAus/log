@@ -1,4 +1,5 @@
 var ALIASES = {};
+ALIASES["log"] = {};
 ALIASES['cfg_if'] = {};
 ALIASES['log'] = {};
 ALIASES['log'] = {};

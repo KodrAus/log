@@ -1,1 +1,1 @@
-initSidebarItems({"struct":[["Error","An error encountered while visiting a key-value source."],["Value","The value in a key-value pair."]],"trait":[["Visit","An arbitrary structured value."],["Visitor","A serializer for primitive values."]]});
+initSidebarItems({"struct":[["Error","An error encountered while visiting a key-value source."],["Value","The value in a key-value pair."],["Visit","A visitor for a value."]],"trait":[["ToValue","A type that can be converted into a value."]]});

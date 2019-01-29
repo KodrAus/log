@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["Key","The key in a key-value pair."]],"trait":[["ToKey","A type that can be converted into a key."]]});
