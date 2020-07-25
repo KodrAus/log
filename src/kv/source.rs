@@ -129,6 +129,16 @@ where
         Ok(())
     }
 
+    fn get<'v>(&'v self, key: Key) -> Option<Value<'v>> {
+        for source in self {
+            if let Some(found) = source.get(key.to_key()) {
+                return Some(found);
+            }
+        }
+
+        None
+    }
+
     fn count(&self) -> usize {
         self.len()
     }
@@ -144,6 +154,14 @@ where
         }
 
         Ok(())
+    }
+
+    fn get<'v>(&'v self, key: Key) -> Option<Value<'v>> {
+        if let Some(ref source) = *self {
+            source.get(key)
+        } else {
+            None
+        }
     }
 
     fn count(&self) -> usize {
